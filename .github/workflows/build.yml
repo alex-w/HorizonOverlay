@@ -18,14 +18,18 @@ jobs:
       matrix:
         include:
           - name: macOS
-            os: macos-14
+            os: macos-13
             artifact: HorizonOverlay-macos
+            qt_arch: clang_64
+            cmake_osx_arch: x86_64
           - name: Linux
             os: ubuntu-24.04
             artifact: HorizonOverlay-linux
+            qt_arch: gcc_64
           - name: Windows
             os: windows-2022
             artifact: HorizonOverlay-windows
+            qt_arch: win64_msvc2022_64
 
     steps:
       - name: Checkout HorizonOverlay
@@ -69,6 +73,7 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
+          arch: ${{ matrix.qt_arch }}
           modules: qtcharts qtmultimedia qtpositioning qtserialport
           cache: true
 
@@ -83,7 +88,7 @@ jobs:
         run: |
           cmake_extra=()
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            cmake_extra+=("-DCMAKE_OSX_ARCHITECTURES=$(uname -m)")
+            cmake_extra+=("-DCMAKE_OSX_ARCHITECTURES=${{ matrix.cmake_osx_arch }}")
             cmake_extra+=("-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0")
           fi
           cmake -S stellarium -B build -G Ninja \
@@ -119,10 +124,21 @@ jobs:
             -DUSE_PLUGIN_VTS=OFF
 
       - name: Build plug-in
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -o pipefail
           cmake --build build --target HorizonOverlay --parallel 2 2>&1 | tee build/horizonoverlay-build.log
+
+      - name: Build plug-in
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake --build build --target HorizonOverlay --parallel 2 *> build/horizonoverlay-build.log
+          Get-Content build/horizonoverlay-build.log
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       - name: Upload failure logs
         if: failure()
