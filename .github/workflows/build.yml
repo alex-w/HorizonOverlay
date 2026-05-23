@@ -81,8 +81,14 @@ jobs:
       - name: Configure
         shell: bash
         run: |
+          cmake_extra=()
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            cmake_extra+=("-DCMAKE_OSX_ARCHITECTURES=$(uname -m)")
+            cmake_extra+=("-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0")
+          fi
           cmake -S stellarium -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            "${cmake_extra[@]}" \
             -DUSE_PLUGIN_HORIZONOVERLAY=ON \
             -DUSE_PLUGIN_ANGLEMEASURE=OFF \
             -DUSE_PLUGIN_ARCHAEOLINES=OFF \
@@ -113,7 +119,22 @@ jobs:
             -DUSE_PLUGIN_VTS=OFF
 
       - name: Build plug-in
-        run: cmake --build build --target HorizonOverlay --parallel
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake --build build --target HorizonOverlay --parallel 2 2>&1 | tee build/horizonoverlay-build.log
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HorizonOverlay-${{ matrix.name }}-failure-logs
+          path: |
+            build/horizonoverlay-build.log
+            build/CMakeFiles/CMakeConfigureLog.yaml
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
 
       - name: Package artifact
         shell: bash
