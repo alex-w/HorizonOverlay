@@ -62,7 +62,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install gettext md4c ninja pkg-config
+          brew install gettext glm md4c ninja pkg-config
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
@@ -89,7 +89,7 @@ jobs:
         shell: bash
         run: |
           cmake -E copy_directory horizon-overlay/plugin/HorizonOverlay stellarium/plugins/HorizonOverlay
-          perl -0pi -e 's/(ADD_PLUGIN\(SimpleDrawLine 0\)\R)/$1ADD_PLUGIN(HorizonOverlay 1)\n/' stellarium/CMakeLists.txt
+          printf '\n# External dynamic plug-in packaged by HorizonOverlay CI.\nADD_SUBDIRECTORY(HorizonOverlay)\n' >> stellarium/plugins/CMakeLists.txt
 
       - name: Configure
         shell: bash
@@ -102,7 +102,6 @@ jobs:
           cmake -S stellarium -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             "${cmake_extra[@]}" \
-            -DUSE_PLUGIN_HORIZONOVERLAY=ON \
             -DUSE_PLUGIN_ANGLEMEASURE=OFF \
             -DUSE_PLUGIN_ARCHAEOLINES=OFF \
             -DUSE_PLUGIN_CALENDARS=OFF \
