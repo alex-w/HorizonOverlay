@@ -94,11 +94,13 @@ jobs:
       - name: Configure
         shell: bash
         run: |
+          mkdir -p build
           cmake_extra=()
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             cmake_extra+=("-DCMAKE_OSX_ARCHITECTURES=${{ matrix.cmake_osx_arch }}")
             cmake_extra+=("-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0")
           fi
+          set -o pipefail
           cmake -S stellarium -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             "${cmake_extra[@]}" \
@@ -129,7 +131,8 @@ jobs:
             -DUSE_PLUGIN_SUPERNOVAE=OFF \
             -DUSE_PLUGIN_TELESCOPECONTROL=OFF \
             -DUSE_PLUGIN_TEXTUSERINTERFACE=OFF \
-            -DUSE_PLUGIN_VTS=OFF
+            -DUSE_PLUGIN_VTS=OFF \
+            2>&1 | tee build/horizonoverlay-configure.log
 
       - name: Build plug-in
         if: runner.os != 'Windows'
@@ -154,6 +157,7 @@ jobs:
         with:
           name: HorizonOverlay-${{ matrix.name }}-failure-logs
           path: |
+            build/horizonoverlay-configure.log
             build/horizonoverlay-build.log
             build/CMakeFiles/CMakeConfigureLog.yaml
             build/CMakeFiles/CMakeOutput.log
@@ -165,6 +169,9 @@ jobs:
         shell: bash
         run: |
           log_file="build/horizonoverlay-build.log"
+          if [[ ! -f "$log_file" && -f build/horizonoverlay-configure.log ]]; then
+            log_file="build/horizonoverlay-configure.log"
+          fi
           if [[ ! -f "$log_file" && -f build/CMakeFiles/CMakeConfigureLog.yaml ]]; then
             log_file="build/CMakeFiles/CMakeConfigureLog.yaml"
           fi
@@ -175,8 +182,11 @@ jobs:
               tail -120 "$log_file"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            message="$(tail -40 "$log_file" | tr '\n' ' ' | cut -c1-3500)"
-            echo "::error title=Failure log tail::$message"
+            message="$(grep -Ei 'error|fatal|failed|could not|not found|undefined|LNK[0-9]+' "$log_file" | tail -40 | tr '\n' ' ' | cut -c1-3500)"
+            if [[ -z "$message" ]]; then
+              message="$(tail -40 "$log_file" | tr '\n' ' ' | cut -c1-3500)"
+            fi
+            echo "::error title=Filtered failure log::$message"
           fi
 
       - name: Report failure log tail
@@ -184,6 +194,9 @@ jobs:
         shell: pwsh
         run: |
           $logFile = "build/horizonoverlay-build.log"
+          if (!(Test-Path $logFile) -and (Test-Path "build/horizonoverlay-configure.log")) {
+            $logFile = "build/horizonoverlay-configure.log"
+          }
           if (!(Test-Path $logFile) -and (Test-Path "build/CMakeFiles/CMakeConfigureLog.yaml")) {
             $logFile = "build/CMakeFiles/CMakeConfigureLog.yaml"
           }
