@@ -103,8 +103,10 @@ jobs:
           set -o pipefail
           cmake -S stellarium -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             "${cmake_extra[@]}" \
             -DENABLE_SHOWMYSKY=OFF \
+            -DENABLE_XLSX=OFF \
             -DUSE_PLUGIN_ANGLEMEASURE=OFF \
             -DUSE_PLUGIN_ARCHAEOLINES=OFF \
             -DUSE_PLUGIN_CALENDARS=OFF \
