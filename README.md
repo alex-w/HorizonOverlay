@@ -33,8 +33,16 @@ The current target is Stellarium `25.1.0` with Qt `6.8.x`. Other versions may wo
 │       └── translations/
 │           └── horizonoverlay/
 │               ├── POTFILES.in
+│               ├── de.po
+│               ├── es.po
+│               ├── fr.po
 │               ├── horizonoverlay.pot
+│               ├── it.po
 │               ├── ja.po
+│               ├── ko.po
+│               ├── pt_BR.po
+│               ├── ru.po
+│               ├── zh_TW.po
 │               └── zh_CN.po
 └── scripts/
     └── install-to-user-modules.sh
@@ -128,7 +136,15 @@ HorizonOverlay/
 ├── obstructions.txt
 └── translations/
     └── horizonoverlay/
+        ├── de.qm
+        ├── es.qm
+        ├── fr.qm
+        ├── it.qm
         ├── ja.qm
+        ├── ko.qm
+        ├── pt_BR.qm
+        ├── ru.qm
+        ├── zh_TW.qm
         └── zh_CN.qm
 ```
 
@@ -156,9 +172,24 @@ Because this repository ships HorizonOverlay as a user-directory dynamic plug-in
 HorizonOverlay/translations/horizonoverlay/<locale>.qm
 ```
 
-The selected locale follows Stellarium's application language, not the operating system language. For example, a Japanese Stellarium UI loads `ja.qm`, while a Simplified Chinese UI loads `zh_CN.qm`. If no matching plug-in-local translation exists, HorizonOverlay falls back to Stellarium's global `q_()` translations and then English.
+The settings dialog follows Stellarium's current application language, not the operating system language. When Stellarium emits `languageChanged`, an open HorizonOverlay settings dialog is rebuilt immediately in the new language. If no matching plug-in-local translation exists, HorizonOverlay uses English for its own settings UI instead of mixing languages.
 
-Simplified Chinese and Japanese are currently provided as `zh_CN.po` and `ja.po`, and compiled to `zh_CN.qm` / `ja.qm` in GitHub Actions.
+Dynamic plug-in metadata is more limited: Stellarium caches external plug-in names and descriptions in its plug-in list, and those strings are translated with Stellarium's built-in global `q_()` domain. Because a user-directory dynamic plug-in cannot extend that global domain at runtime, HorizonOverlay keeps its plug-in-list metadata in English for consistency unless it is later merged as a bundled Stellarium plug-in with its strings included in Stellarium's official translation catalog.
+
+Currently bundled translations:
+
+- Simplified Chinese: `zh_CN`
+- Traditional Chinese: `zh_TW`
+- German: `de`
+- Spanish: `es`
+- French: `fr`
+- Italian: `it`
+- Japanese: `ja`
+- Korean: `ko`
+- Brazilian Portuguese: `pt_BR`
+- Russian: `ru`
+
+English is the fallback language and does not require a `.po` file.
 
 ## Configuration
 

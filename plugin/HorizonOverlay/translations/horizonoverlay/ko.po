@@ -1,0 +1,65 @@
+# Korean translations for HorizonOverlay.
+# Copyright (C) HorizonOverlay contributors
+# This file is distributed under the same license as the HorizonOverlay package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: HorizonOverlay 0.1.1\n"
+"Report-Msgid-Bugs-To: https://github.com/songshugong/HorizonOverlay/issues\n"
+"POT-Creation-Date: 2026-05-25 00:00+0800\n"
+"PO-Revision-Date: 2026-05-25 09:40+0800\n"
+"Last-Translator: Song Zihan\n"
+"Language-Team: Korean\n"
+"Language: ko\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Horizon Overlay"
+msgstr "지평선 차폐 오버레이"
+
+msgid "Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape."
+msgstr "일반 Stellarium 지형 위에 투명한 로컬 차폐 지평선 오버레이를 그립니다."
+
+msgid "Horizon Overlay Settings"
+msgstr "지평선 차폐 오버레이 설정"
+
+msgid "Show overlay"
+msgstr "오버레이 표시"
+
+msgid "Show filled obstruction area"
+msgstr "차폐 채움 영역 표시"
+
+msgid "Show outline"
+msgstr "윤곽선 표시"
+
+msgid "Fill opacity: %1%"
+msgstr "채움 불투명도: %1%"
+
+msgid "Line opacity: %1%"
+msgstr "선 불투명도: %1%"
+
+msgid "Fill color"
+msgstr "채움 색상"
+
+msgid "Line color"
+msgstr "선 색상"
+
+msgid "Choose file..."
+msgstr "파일 선택..."
+
+msgid "Reload table"
+msgstr "차폐표 다시 불러오기"
+
+msgid "Obstruction table:"
+msgstr "차폐표:"
+
+msgid "Close"
+msgstr "닫기"
+
+msgid "Choose obstruction table"
+msgstr "차폐표 선택"
+
+msgid "Text files (*.txt *.hrz *.csv);;All files (*)"
+msgstr "텍스트 파일 (*.txt *.hrz *.csv);;모든 파일 (*)"

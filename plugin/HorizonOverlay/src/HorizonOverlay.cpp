@@ -26,9 +26,10 @@
 #include <QOpenGLContext>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLVertexArrayObject>
+#include <QPoint>
 #include <QPushButton>
-#include <QLocale>
 #include <QSlider>
+#include <QStringList>
 #include <QTranslator>
 #include <QVector2D>
 #include <QVector4D>
@@ -122,12 +123,32 @@ void appendScreenTriangle(std::vector<float>& vertices, const ScreenPoint& a, co
     vertices.push_back(c.y);
 }
 
-QString currentAppLocaleName()
+QString normalizedSupportedLocale(QString localeName)
 {
-    if (StelTranslator::globalTranslator)
-        return StelTranslator::globalTranslator->getTrueLocaleName();
+    localeName.replace('-', '_');
+    const QString baseName = localeName.section('_', 0, 0);
 
-    return QLocale::system().name();
+    if (localeName == "zh_CN" || localeName == "zh_Hans" || localeName == "zh_SG" || localeName == "zh")
+        return "zh_CN";
+    if (localeName == "zh_TW" || localeName == "zh_Hant" || localeName == "zh_HK" || localeName == "zh_MO")
+        return "zh_TW";
+    if (localeName == "pt_BR" || localeName == "pt")
+        return "pt_BR";
+
+    static const QStringList supportedBaseLocales = {
+        "de",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "ru",
+    };
+
+    if (supportedBaseLocales.contains(baseName))
+        return baseName;
+
+    return {};
 }
 
 QString horizonOverlayTranslationDir()
@@ -149,18 +170,6 @@ bool loadHorizonOverlayTranslator(QTranslator& translator, const QString& locale
     return loaded && !translator.isEmpty();
 }
 
-QString translateHorizonOverlayInfo(const char* text)
-{
-    QTranslator translator;
-    if (loadHorizonOverlayTranslator(translator, currentAppLocaleName()))
-    {
-        const QString translated = translator.translate("", text);
-        if (!translated.isEmpty())
-            return translated;
-    }
-
-    return QString::fromUtf8(text);
-}
 }
 
 #ifndef HORIZONOVERLAY_PLUGIN_VERSION
@@ -180,10 +189,10 @@ StelPluginInfo HorizonOverlayStelPluginInterface::getPluginInfo() const
 {
     StelPluginInfo info;
     info.id = "HorizonOverlay";
-    info.displayedName = translateHorizonOverlayInfo(N_("Horizon Overlay"));
+    info.displayedName = N_("Horizon Overlay");
     info.authors = "Song Zihan / Codex";
     info.contact = "";
-    info.description = translateHorizonOverlayInfo(N_("Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape."));
+    info.description = N_("Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape.");
     info.version = HORIZONOVERLAY_PLUGIN_VERSION;
     info.license = HORIZONOVERLAY_PLUGIN_LICENSE;
     return info;
@@ -668,7 +677,7 @@ void HorizonOverlay::loadTranslator()
 {
     localTranslator.reset();
 
-    const QString localeName = StelApp::getInstance().getLocaleMgr().getAppLanguage();
+    const QString localeName = currentTranslationLocale();
     if (localeName.isEmpty())
         return;
 
@@ -684,6 +693,9 @@ void HorizonOverlay::loadTranslator()
 
 void HorizonOverlay::reloadTranslator()
 {
+    const bool reopenDialog = settingsDialog && settingsDialog->isVisible();
+    const QPoint dialogPosition = settingsDialog ? settingsDialog->pos() : QPoint();
+
     loadTranslator();
 
     if (settingsDialog)
@@ -691,6 +703,20 @@ void HorizonOverlay::reloadTranslator()
         delete settingsDialog;
         settingsDialog = nullptr;
     }
+
+    if (reopenDialog)
+    {
+        createSettingsDialog();
+        settingsDialog->move(dialogPosition);
+        settingsDialog->show();
+        settingsDialog->raise();
+        settingsDialog->activateWindow();
+    }
+}
+
+QString HorizonOverlay::currentTranslationLocale() const
+{
+    return normalizedSupportedLocale(StelApp::getInstance().getLocaleMgr().getAppLanguage());
 }
 
 QString HorizonOverlay::translateUi(const char* text) const
@@ -702,7 +728,7 @@ QString HorizonOverlay::translateUi(const char* text) const
             return translated;
     }
 
-    return q_(text);
+    return QString::fromUtf8(text);
 }
 
 std::string HorizonOverlay::resolveObstructionPath(const std::string& path) const

@@ -1,0 +1,65 @@
+# Russian translations for HorizonOverlay.
+# Copyright (C) HorizonOverlay contributors
+# This file is distributed under the same license as the HorizonOverlay package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: HorizonOverlay 0.1.1\n"
+"Report-Msgid-Bugs-To: https://github.com/songshugong/HorizonOverlay/issues\n"
+"POT-Creation-Date: 2026-05-25 00:00+0800\n"
+"PO-Revision-Date: 2026-05-25 09:40+0800\n"
+"Last-Translator: Song Zihan\n"
+"Language-Team: Russian\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+msgid "Horizon Overlay"
+msgstr "Наложение горизонта"
+
+msgid "Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape."
+msgstr "Рисует прозрачное наложение местных препятствий горизонта поверх обычного ландшафта Stellarium."
+
+msgid "Horizon Overlay Settings"
+msgstr "Настройки наложения горизонта"
+
+msgid "Show overlay"
+msgstr "Показать наложение"
+
+msgid "Show filled obstruction area"
+msgstr "Показать заполненную область препятствий"
+
+msgid "Show outline"
+msgstr "Показать контур"
+
+msgid "Fill opacity: %1%"
+msgstr "Непрозрачность заливки: %1%"
+
+msgid "Line opacity: %1%"
+msgstr "Непрозрачность линии: %1%"
+
+msgid "Fill color"
+msgstr "Цвет заливки"
+
+msgid "Line color"
+msgstr "Цвет линии"
+
+msgid "Choose file..."
+msgstr "Выбрать файл..."
+
+msgid "Reload table"
+msgstr "Перезагрузить таблицу"
+
+msgid "Obstruction table:"
+msgstr "Таблица препятствий:"
+
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "Choose obstruction table"
+msgstr "Выбрать таблицу препятствий"
+
+msgid "Text files (*.txt *.hrz *.csv);;All files (*)"
+msgstr "Текстовые файлы (*.txt *.hrz *.csv);;Все файлы (*)"
