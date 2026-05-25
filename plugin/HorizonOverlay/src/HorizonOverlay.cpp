@@ -3,6 +3,7 @@
 #include "StelApp.hpp"
 #include "StelCore.hpp"
 #include "StelFileMgr.hpp"
+#include "StelLocaleMgr.hpp"
 #include "StelPainter.hpp"
 #include "StelProjector.hpp"
 #include "StelOpenGL.hpp"
@@ -120,6 +121,46 @@ void appendScreenTriangle(std::vector<float>& vertices, const ScreenPoint& a, co
     vertices.push_back(c.x);
     vertices.push_back(c.y);
 }
+
+QString currentAppLocaleName()
+{
+    if (StelTranslator::globalTranslator)
+        return StelTranslator::globalTranslator->getTrueLocaleName();
+
+    return QLocale::system().name();
+}
+
+QString horizonOverlayTranslationDir()
+{
+    return StelFileMgr::getUserDir() + "/modules/HorizonOverlay/translations/horizonoverlay";
+}
+
+bool loadHorizonOverlayTranslator(QTranslator& translator, const QString& localeName)
+{
+    const QString translationDir = horizonOverlayTranslationDir();
+    bool loaded = translator.load(localeName + ".qm", translationDir);
+    if (!loaded)
+    {
+        const int separator = localeName.indexOf('_');
+        if (separator > 0)
+            loaded = translator.load(localeName.left(separator) + ".qm", translationDir);
+    }
+
+    return loaded && !translator.isEmpty();
+}
+
+QString translateHorizonOverlayInfo(const char* text)
+{
+    QTranslator translator;
+    if (loadHorizonOverlayTranslator(translator, currentAppLocaleName()))
+    {
+        const QString translated = translator.translate("", text);
+        if (!translated.isEmpty())
+            return translated;
+    }
+
+    return QString::fromUtf8(text);
+}
 }
 
 #ifndef HORIZONOVERLAY_PLUGIN_VERSION
@@ -139,10 +180,10 @@ StelPluginInfo HorizonOverlayStelPluginInterface::getPluginInfo() const
 {
     StelPluginInfo info;
     info.id = "HorizonOverlay";
-    info.displayedName = N_("Horizon Overlay");
+    info.displayedName = translateHorizonOverlayInfo(N_("Horizon Overlay"));
     info.authors = "Song Zihan / Codex";
     info.contact = "";
-    info.description = N_("Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape.");
+    info.description = translateHorizonOverlayInfo(N_("Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape."));
     info.version = HORIZONOVERLAY_PLUGIN_VERSION;
     info.license = HORIZONOVERLAY_PLUGIN_LICENSE;
     return info;
@@ -174,6 +215,9 @@ void HorizonOverlay::init()
     qDebug() << "[HorizonOverlay] init";
 
     loadTranslator();
+    connect(&StelApp::getInstance(), &StelApp::languageChanged, this, [this]() {
+        reloadTranslator();
+    });
     loadSettings();
     reloadObstructionTable();
 }
@@ -622,31 +666,31 @@ std::string HorizonOverlay::moduleDirPath() const
 
 void HorizonOverlay::loadTranslator()
 {
-    const QString moduleDir = QString::fromStdString(moduleDirPath());
-    if (moduleDir.isEmpty())
+    localTranslator.reset();
+
+    const QString localeName = StelApp::getInstance().getLocaleMgr().getAppLanguage();
+    if (localeName.isEmpty())
         return;
 
-    QString localeName = QLocale::system().name();
-    if (StelTranslator::globalTranslator)
-        localeName = StelTranslator::globalTranslator->getTrueLocaleName();
-
     localTranslator = std::make_unique<QTranslator>();
-    const QString translationDir = moduleDir + "/translations/horizonoverlay";
-    bool loaded = localTranslator->load(localeName + ".qm", translationDir);
-    if (!loaded)
-    {
-        const int separator = localeName.indexOf('_');
-        if (separator > 0)
-            loaded = localTranslator->load(localeName.left(separator) + ".qm", translationDir);
-    }
-
-    if (!loaded || localTranslator->isEmpty())
+    if (!loadHorizonOverlayTranslator(*localTranslator, localeName))
     {
         localTranslator.reset();
         return;
     }
 
     qDebug() << "[HorizonOverlay] Loaded translations for" << localeName;
+}
+
+void HorizonOverlay::reloadTranslator()
+{
+    loadTranslator();
+
+    if (settingsDialog)
+    {
+        delete settingsDialog;
+        settingsDialog = nullptr;
+    }
 }
 
 QString HorizonOverlay::translateUi(const char* text) const

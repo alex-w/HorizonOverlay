@@ -63,6 +63,7 @@ private:
     void createSettingsDialog();
     void reloadObstructionTable();
     void loadTranslator();
+    void reloadTranslator();
     QString translateUi(const char* text) const;
     bool drawShaderFill(StelPainter& painter, const StelProjectorP& projector);
     void drawCpuScreenSpaceFill(StelPainter& painter, const StelProjectorP& projector) const;

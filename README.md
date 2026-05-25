@@ -34,6 +34,7 @@ The current target is Stellarium `25.1.0` with Qt `6.8.x`. Other versions may wo
 │           └── horizonoverlay/
 │               ├── POTFILES.in
 │               ├── horizonoverlay.pot
+│               ├── ja.po
 │               └── zh_CN.po
 └── scripts/
     └── install-to-user-modules.sh
@@ -127,6 +128,7 @@ HorizonOverlay/
 ├── obstructions.txt
 └── translations/
     └── horizonoverlay/
+        ├── ja.qm
         └── zh_CN.qm
 ```
 
@@ -154,7 +156,9 @@ Because this repository ships HorizonOverlay as a user-directory dynamic plug-in
 HorizonOverlay/translations/horizonoverlay/<locale>.qm
 ```
 
-and falls back to Stellarium's global `q_()` translations if no local translation is available. Simplified Chinese is currently provided as `zh_CN.po` and compiled to `zh_CN.qm` in GitHub Actions.
+The selected locale follows Stellarium's application language, not the operating system language. For example, a Japanese Stellarium UI loads `ja.qm`, while a Simplified Chinese UI loads `zh_CN.qm`. If no matching plug-in-local translation exists, HorizonOverlay falls back to Stellarium's global `q_()` translations and then English.
+
+Simplified Chinese and Japanese are currently provided as `zh_CN.po` and `ja.po`, and compiled to `zh_CN.qm` / `ja.qm` in GitHub Actions.
 
 ## Configuration
 
