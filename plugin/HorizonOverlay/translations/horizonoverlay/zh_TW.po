@@ -1,212 +1,212 @@
-# SOME DESCRIPTIVE TITLE.
-# Copyright (C) YEAR "HorizonOverlay contributors"
-# This file is distributed under the same license as the PACKAGE package.
-# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+# Traditional Chinese translations for HorizonOverlay.
+# Copyright (C) HorizonOverlay contributors
+# This file is distributed under the same license as the HorizonOverlay package.
 #
-#, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: PACKAGE VERSION\n"
+"Project-Id-Version: HorizonOverlay 0.1.1\n"
 "Report-Msgid-Bugs-To: \"https://github.com/songshugong/HorizonOverlay/"
 "issues\"\n"
 "POT-Creation-Date: 2026-06-16 08:28+0800\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language-Team: LANGUAGE <LL@li.org>\n"
-"Language: \n"
+"PO-Revision-Date: 2026-05-25 09:40+0800\n"
+"Last-Translator: Song Zihan\n"
+"Language-Team: Chinese (Traditional)\n"
+"Language: zh_TW\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
 
 #: src/HorizonOverlay.cpp:380 src/HorizonOverlay.cpp:431
 #: src/HorizonOverlay.cpp:432 src/gui/HorizonOverlayDialog.cpp:251
 msgid "Horizon Overlay"
-msgstr ""
+msgstr "地平線遮擋疊加"
 
 #: src/HorizonOverlay.cpp:383 src/gui/HorizonOverlayDialog.cpp:257
 msgid ""
 "Draws a transparent local obstruction horizon overlay above the normal "
 "Stellarium landscape."
-msgstr ""
+msgstr "在 Stellarium 原有地景上方繪製透明的本地遮擋地平線疊加層。"
 
 #: src/HorizonOverlay.cpp:431
 msgid "Show local obstruction horizon overlay"
-msgstr ""
+msgstr "顯示本地地平線遮擋疊加層"
 
 #: src/HorizonOverlay.cpp:432
 msgid "Show settings dialog"
-msgstr ""
+msgstr "顯示設定視窗"
 
 #: src/HorizonOverlay.cpp:649
 #, qt-format
 msgid ""
 "Performance: %1 ms last, %2 ms avg, %3 ms max | FoV %4 deg | %5 | %6 samples"
 msgstr ""
+"效能：最近 %1 ms，平均 %2 ms，最大 %3 ms | 視場 %4 度 | %5 | %6 個取樣點"
 
 #: src/gui/HorizonOverlayDialog.cpp:102
 msgid ""
 "Edit mode is active. Hold Shift and drag with the left mouse button to add "
 "points; hold Shift and drag with the right mouse button to erase nearby "
 "points."
-msgstr ""
+msgstr "編輯模式已開啟。按住 Shift 並用左鍵拖曳新增點；按住 Shift 並用右鍵拖曳擦除附近的點。"
 
 #: src/gui/HorizonOverlayDialog.cpp:116
 msgid ""
 "Drawing mode is active. Hold Shift and drag with the left mouse button in "
 "the sky to add points; hold Shift and drag with the right mouse button to "
 "erase nearby points."
-msgstr ""
+msgstr "繪製模式已開啟。按住 Shift 並在天空中用左鍵拖曳新增點；按住 Shift 並用右鍵拖曳擦除附近的點。"
 
 #: src/gui/HorizonOverlayDialog.cpp:126
 msgid "Drawing finished and table saved."
-msgstr ""
+msgstr "繪製已完成，遮擋表已儲存。"
 
 #: src/gui/HorizonOverlayDialog.cpp:126
 msgid "Drawing finished, but the table could not be saved."
-msgstr ""
+msgstr "繪製已完成，但無法儲存遮擋表。"
 
 #: src/gui/HorizonOverlayDialog.cpp:156 src/gui/HorizonOverlayDialog.cpp:239
 msgid "Fill color"
-msgstr ""
+msgstr "填充顏色"
 
 #: src/gui/HorizonOverlayDialog.cpp:164 src/gui/HorizonOverlayDialog.cpp:240
 msgid "Line color"
-msgstr ""
+msgstr "線條顏色"
 
 #: src/gui/HorizonOverlayDialog.cpp:184
 msgid "Choose obstruction table"
-msgstr ""
+msgstr "選擇遮擋表"
 
 #: src/gui/HorizonOverlayDialog.cpp:186
 msgid "Text files (*.txt *.hrz *.csv);;All files (*)"
-msgstr ""
+msgstr "文字檔 (*.txt *.hrz *.csv);;所有檔案 (*)"
 
 #: src/gui/HorizonOverlayDialog.cpp:193 src/gui/HorizonOverlayDialog.cpp:198
 msgid "Table reloaded."
-msgstr ""
+msgstr "遮擋表已重新載入。"
 
 #: src/gui/HorizonOverlayDialog.cpp:202
 msgid "Points cleared."
-msgstr ""
+msgstr "點已清除。"
 
 #: src/gui/HorizonOverlayDialog.cpp:206
 msgid "Table saved."
-msgstr ""
+msgstr "遮擋表已儲存。"
 
 #: src/gui/HorizonOverlayDialog.cpp:206
 msgid "Could not save table."
-msgstr ""
+msgstr "無法儲存遮擋表。"
 
 #: src/gui/HorizonOverlayDialog.cpp:215 src/gui/HorizonOverlayDialog.cpp:216
 msgid "Horizon Overlay Settings"
-msgstr ""
+msgstr "地平線遮擋疊加設定"
 
 #: src/gui/HorizonOverlayDialog.cpp:217
 msgid "Settings"
-msgstr ""
+msgstr "設定"
 
 #: src/gui/HorizonOverlayDialog.cpp:218
 msgid "About"
-msgstr ""
+msgstr "關於"
 
 #: src/gui/HorizonOverlayDialog.cpp:219 src/gui/HorizonOverlayDialog.cpp:242
 msgid "Performance monitor"
-msgstr ""
+msgstr "效能監視器"
 
 #: src/gui/HorizonOverlayDialog.cpp:220
 msgid "Obstruction profile"
-msgstr ""
+msgstr "遮擋輪廓"
 
 #: src/gui/HorizonOverlayDialog.cpp:221
 msgid "Obstruction table:"
-msgstr ""
+msgstr "遮擋表："
 
 #: src/gui/HorizonOverlayDialog.cpp:222
 msgid "Choose file..."
-msgstr ""
+msgstr "選擇檔案..."
 
 #: src/gui/HorizonOverlayDialog.cpp:223
 msgid "Reload table"
-msgstr ""
+msgstr "重新載入遮擋表"
 
 #: src/gui/HorizonOverlayDialog.cpp:224
 msgid "Clear points"
-msgstr ""
+msgstr "清除點"
 
 #: src/gui/HorizonOverlayDialog.cpp:225
 msgid "Save table"
-msgstr ""
+msgstr "儲存遮擋表"
 
 #: src/gui/HorizonOverlayDialog.cpp:226
 msgid "Overlay controls"
-msgstr ""
+msgstr "疊加層控制"
 
 #: src/gui/HorizonOverlayDialog.cpp:227
 msgid "Show overlay"
-msgstr ""
+msgstr "顯示疊加層"
 
 #: src/gui/HorizonOverlayDialog.cpp:228
 msgid "Show filled obstruction area"
-msgstr ""
+msgstr "顯示遮擋填充區域"
 
 #: src/gui/HorizonOverlayDialog.cpp:229
 msgid "Show outline"
-msgstr ""
+msgstr "顯示輪廓線"
 
 #: src/gui/HorizonOverlayDialog.cpp:230
 msgid "Edit points"
-msgstr ""
+msgstr "編輯點"
 
 #: src/gui/HorizonOverlayDialog.cpp:231
 msgid "Show button on bottom toolbar"
-msgstr ""
+msgstr "在底部工具列顯示按鈕"
 
 #: src/gui/HorizonOverlayDialog.cpp:232
 msgid ""
 "Draw a profile directly in the sky: hold Shift and drag with the left mouse "
 "button to add points; hold Shift and drag with the right mouse button to "
 "erase nearby points."
-msgstr ""
+msgstr "直接在天空中繪製輪廓：按住 Shift 並用左鍵拖曳新增點；按住 Shift 並用右鍵拖曳擦除附近的點。"
 
 #: src/gui/HorizonOverlayDialog.cpp:233
 msgid "Start drawing profile"
-msgstr ""
+msgstr "開始繪製輪廓"
 
 #: src/gui/HorizonOverlayDialog.cpp:234
 msgid "Finish and save drawing"
-msgstr ""
+msgstr "完成並儲存繪製"
 
 #: src/gui/HorizonOverlayDialog.cpp:235
 msgid "Appearance"
-msgstr ""
+msgstr "外觀"
 
 #: src/gui/HorizonOverlayDialog.cpp:236
 msgid "Fill opacity:"
-msgstr ""
+msgstr "填充透明度："
 
 #: src/gui/HorizonOverlayDialog.cpp:237
 msgid "Line opacity:"
-msgstr ""
+msgstr "線條透明度："
 
 #: src/gui/HorizonOverlayDialog.cpp:238
 msgid "Line width:"
-msgstr ""
+msgstr "線寬："
 
 #: src/gui/HorizonOverlayDialog.cpp:241
 msgid "Save settings"
-msgstr ""
+msgstr "儲存設定"
 
 #: src/gui/HorizonOverlayDialog.cpp:253
 msgid "Version:"
-msgstr ""
+msgstr "版本："
 
 #: src/gui/HorizonOverlayDialog.cpp:254
 msgid "License:"
-msgstr ""
+msgstr "授權條款："
 
 #: src/gui/HorizonOverlayDialog.cpp:255
 msgid "Authors:"
-msgstr ""
+msgstr "作者："
 
 #: src/gui/HorizonOverlayDialog.cpp:258
 msgid ""
@@ -214,17 +214,19 @@ msgid ""
 "other local horizon blockers without replacing the active Stellarium "
 "landscape."
 msgstr ""
+"使用方位角/高度角遮擋表來顯示建築、樹木、地形或其他本地地平線遮擋物，而不替換"
+"目前 Stellarium 地景。"
 
 #: src/gui/HorizonOverlayDialog.cpp:259
 msgid ""
 "Wide-field rendering uses a shader mask when available and falls back to a "
 "CPU screen mask when needed."
-msgstr ""
+msgstr "大視場渲染會優先使用 shader 遮罩；不可用時會回退到 CPU 螢幕遮罩。"
 
 #: src/gui/HorizonOverlayDialog.cpp:290
 msgid "Settings are saved automatically."
-msgstr ""
+msgstr "設定會自動儲存。"
 
 #: src/gui/HorizonOverlayDialog.cpp:317
 msgid "Settings saved."
-msgstr ""
+msgstr "設定已儲存。"

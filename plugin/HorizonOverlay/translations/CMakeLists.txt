@@ -51,8 +51,8 @@ IF(HORIZONOVERLAY_XGETTEXT_EXECUTABLE)
             --keyword=q_
             --keyword=translateUi
             --add-comments=TRANSLATORS:
-            --directory="${CMAKE_CURRENT_SOURCE_DIR}/.."
-            --files-from="${HORIZONOVERLAY_TRANSLATION_SOURCE_DIR}/POTFILES.in"
+            --directory=${CMAKE_CURRENT_SOURCE_DIR}/..
+            --files-from=${HORIZONOVERLAY_TRANSLATION_SOURCE_DIR}/POTFILES.in
             --copyright-holder="HorizonOverlay contributors"
             --msgid-bugs-address="https://github.com/songshugong/HorizonOverlay/issues"
             --from-code=utf-8

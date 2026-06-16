@@ -3,6 +3,8 @@
 #include "StelApp.hpp"
 #include "StelCore.hpp"
 #include "StelFileMgr.hpp"
+#include "StelGui.hpp"
+#include "StelGuiItems.hpp"
 #include "StelLocaleMgr.hpp"
 #include "StelPainter.hpp"
 #include "StelProjector.hpp"
@@ -10,25 +12,22 @@
 #include "StelTranslator.hpp"
 #include "StelUtils.hpp"
 #include "StelVertexArray.hpp"
+#include "gui/HorizonOverlayDialog.hpp"
 
 #include <QDebug>
-#include <QCheckBox>
+#include <QCoreApplication>
 #include <QColor>
-#include <QColorDialog>
-#include <QDialog>
-#include <QFileDialog>
-#include <QGridLayout>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QLineEdit>
+#include <QElapsedTimer>
+#include <QGuiApplication>
 #include <QMatrix4x4>
+#include <QMouseEvent>
 #include <QOpenGLBuffer>
 #include <QOpenGLContext>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLVertexArrayObject>
-#include <QPushButton>
-#include <QLocale>
-#include <QSlider>
+#include <QPoint>
+#include <QPixmap>
+#include <QStringList>
 #include <QTranslator>
 #include <QVector2D>
 #include <QVector4D>
@@ -40,15 +39,24 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <cmath>
+#include <utility>
 
 namespace
 {
 constexpr double maxAzStepDeg = 0.5;
-constexpr double screenSpaceFillFovThresholdDeg = 180.0;
+constexpr double editMinAzSpacingDeg = 3.0;
+constexpr double autoSimplifyToleranceDeg = 0.45;
+constexpr double autoSmoothResampleStepDeg = 3.0;
+// Legacy 3D fill can cross projection boundaries before the nominal 180 degree
+// limit in wide cylindrical/fisheye views, so switch to the screen mask early.
+constexpr double screenSpaceFillFovThresholdDeg = 150.0;
 constexpr int screenSpaceFillStepPx = 8;
+constexpr double screenSpaceLineMaxJumpPx = 180.0;
 constexpr int fullscreenQuadCoordsPerVertex = 2;
 constexpr int fullscreenQuadVertexAttribIndex = 0;
 constexpr int maxShaderObstructionSamples = 256;
@@ -94,6 +102,174 @@ double parseDouble(const std::string& value, double fallback)
     return end && end != value.c_str() ? parsed : fallback;
 }
 
+std::string stripQuotes(std::string value)
+{
+    value = trim(value);
+    if (value.size() >= 2 && ((value.front() == '"' && value.back() == '"') || (value.front() == '\'' && value.back() == '\'')))
+        return value.substr(1, value.size() - 2);
+    return value;
+}
+
+std::string normalizeColumnName(std::string value)
+{
+    value = lowerAscii(stripQuotes(value));
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (const unsigned char c : value)
+    {
+        if (std::isalnum(c))
+            normalized.push_back(static_cast<char>(c));
+    }
+    return normalized;
+}
+
+std::vector<std::string> splitObstructionRow(std::string line)
+{
+    const std::size_t commentIndex = line.find('#');
+    if (commentIndex != std::string::npos)
+        line.erase(commentIndex);
+
+    const char delimiter = line.find(',') != std::string::npos ? ',' : (line.find(';') != std::string::npos ? ';' : '\0');
+    if (delimiter != '\0')
+    {
+        std::vector<std::string> tokens;
+        std::string token;
+        bool inQuotes = false;
+        char quoteChar = '\0';
+
+        for (const char c : line)
+        {
+            if ((c == '"' || c == '\'') && (!inQuotes || c == quoteChar))
+            {
+                inQuotes = !inQuotes;
+                quoteChar = inQuotes ? c : '\0';
+                token.push_back(c);
+                continue;
+            }
+            if (c == delimiter && !inQuotes)
+            {
+                tokens.push_back(stripQuotes(token));
+                token.clear();
+                continue;
+            }
+            token.push_back(c);
+        }
+        tokens.push_back(stripQuotes(token));
+        return tokens;
+    }
+
+    for (char& c : line)
+    {
+        if (c == '\t')
+            c = ' ';
+    }
+
+    std::vector<std::string> tokens;
+    std::istringstream stream(line);
+    std::string token;
+    while (stream >> token)
+        tokens.push_back(stripQuotes(token));
+    return tokens;
+}
+
+bool parseNumericToken(const std::string& token, double& value)
+{
+    const std::string trimmed = stripQuotes(token);
+    if (trimmed.empty())
+        return false;
+
+    char* end = nullptr;
+    errno = 0;
+    const double parsed = std::strtod(trimmed.c_str(), &end);
+    if (!end || end == trimmed.c_str() || errno == ERANGE)
+        return false;
+
+    value = parsed;
+    return true;
+}
+
+bool isAzimuthColumn(const std::string& normalized)
+{
+    return normalized == "az" ||
+           normalized == "azi" ||
+           normalized == "azimuth" ||
+           normalized == "bearing" ||
+           normalized == "direction" ||
+           normalized == "compass" ||
+           normalized == "heading";
+}
+
+bool isAltitudeColumn(const std::string& normalized)
+{
+    return normalized == "alt" ||
+           normalized == "altitude" ||
+           normalized == "elevation" ||
+           normalized == "elev" ||
+           normalized == "height" ||
+           normalized == "horizon" ||
+           normalized == "horizonalt" ||
+           normalized == "obstruction" ||
+           normalized == "obstructionalt" ||
+           normalized == "obstructionaltitude";
+}
+
+bool detectObstructionHeader(const std::vector<std::string>& tokens, int& azColumn, int& altColumn)
+{
+    int detectedAz = -1;
+    int detectedAlt = -1;
+    for (int i = 0; i < static_cast<int>(tokens.size()); ++i)
+    {
+        const std::string normalized = normalizeColumnName(tokens[static_cast<std::size_t>(i)]);
+        if (detectedAz < 0 && isAzimuthColumn(normalized))
+            detectedAz = i;
+        if (detectedAlt < 0 && isAltitudeColumn(normalized))
+            detectedAlt = i;
+    }
+
+    if (detectedAz < 0 || detectedAlt < 0 || detectedAz == detectedAlt)
+        return false;
+
+    azColumn = detectedAz;
+    altColumn = detectedAlt;
+    return true;
+}
+
+bool parseObstructionSample(const std::vector<std::string>& tokens, int azColumn, int altColumn, double& az, double& alt)
+{
+    if (tokens.empty())
+        return false;
+
+    if (azColumn >= 0 && altColumn >= 0)
+    {
+        const int maxColumn = std::max(azColumn, altColumn);
+        if (static_cast<int>(tokens.size()) <= maxColumn)
+            return false;
+        return parseNumericToken(tokens[static_cast<std::size_t>(azColumn)], az) &&
+               parseNumericToken(tokens[static_cast<std::size_t>(altColumn)], alt);
+    }
+
+    bool foundAz = false;
+    for (const std::string& token : tokens)
+    {
+        double value = 0.0;
+        if (!parseNumericToken(token, value))
+            continue;
+
+        if (!foundAz)
+        {
+            az = value;
+            foundAz = true;
+        }
+        else
+        {
+            alt = value;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 std::string rgbToHex(const float rgb[3])
 {
     QColor color;
@@ -122,12 +298,32 @@ void appendScreenTriangle(std::vector<float>& vertices, const ScreenPoint& a, co
     vertices.push_back(c.y);
 }
 
-QString currentAppLocaleName()
+QString normalizedSupportedLocale(QString localeName)
 {
-    if (StelTranslator::globalTranslator)
-        return StelTranslator::globalTranslator->getTrueLocaleName();
+    localeName.replace('-', '_');
+    const QString baseName = localeName.section('_', 0, 0);
 
-    return QLocale::system().name();
+    if (localeName == "zh_CN" || localeName == "zh_Hans" || localeName == "zh_SG" || localeName == "zh")
+        return "zh_CN";
+    if (localeName == "zh_TW" || localeName == "zh_Hant" || localeName == "zh_HK" || localeName == "zh_MO")
+        return "zh_TW";
+    if (localeName == "pt_BR" || localeName == "pt")
+        return "pt_BR";
+
+    static const QStringList supportedBaseLocales = {
+        "de",
+        "es",
+        "fr",
+        "it",
+        "ja",
+        "ko",
+        "ru",
+    };
+
+    if (supportedBaseLocales.contains(baseName))
+        return baseName;
+
+    return {};
 }
 
 QString horizonOverlayTranslationDir()
@@ -149,18 +345,19 @@ bool loadHorizonOverlayTranslator(QTranslator& translator, const QString& locale
     return loaded && !translator.isEmpty();
 }
 
-QString translateHorizonOverlayInfo(const char* text)
+double normalizeAzimuth(double azDeg, bool preserveExplicitFullCircle)
 {
-    QTranslator translator;
-    if (loadHorizonOverlayTranslator(translator, currentAppLocaleName()))
-    {
-        const QString translated = translator.translate("", text);
-        if (!translated.isEmpty())
-            return translated;
-    }
+    const bool isExplicitFullCircle = azDeg > 0.0 && qFuzzyIsNull(std::fmod(azDeg, 360.0));
 
-    return QString::fromUtf8(text);
+    azDeg = std::fmod(azDeg, 360.0);
+    if (azDeg < 0.0)
+        azDeg += 360.0;
+    if (preserveExplicitFullCircle && isExplicitFullCircle)
+        azDeg = 360.0;
+
+    return azDeg;
 }
+
 }
 
 #ifndef HORIZONOVERLAY_PLUGIN_VERSION
@@ -178,12 +375,14 @@ StelModule* HorizonOverlayStelPluginInterface::getStelModule() const
 
 StelPluginInfo HorizonOverlayStelPluginInterface::getPluginInfo() const
 {
+    Q_INIT_RESOURCE(HorizonOverlay);
+
     StelPluginInfo info;
     info.id = "HorizonOverlay";
-    info.displayedName = translateHorizonOverlayInfo(N_("Horizon Overlay"));
+    info.displayedName = N_("Horizon Overlay");
     info.authors = "Song Zihan / Codex";
     info.contact = "";
-    info.description = translateHorizonOverlayInfo(N_("Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape."));
+    info.description = N_("Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape.");
     info.version = HORIZONOVERLAY_PLUGIN_VERSION;
     info.license = HORIZONOVERLAY_PLUGIN_LICENSE;
     return info;
@@ -191,6 +390,9 @@ StelPluginInfo HorizonOverlayStelPluginInterface::getPluginInfo() const
 
 HorizonOverlay::HorizonOverlay()
     : visible(true)
+    , showToolbarButton(true)
+    , toolbarButtonInBar(false)
+    , editMode(false)
     , drawLine(true)
     , drawFill(true)
     , lineOpacity(0.95f)
@@ -200,18 +402,25 @@ HorizonOverlay::HorizonOverlay()
     , fillRgb{1.0f, 0.48f, 0.09f}
     , obstructionPath("obstructions.txt")
     , settingsDialog(nullptr)
+    , toolbarButton(nullptr)
+    , localTranslatorInstalled(false)
     , fillShaderVars{ -1, -1, -1, -1 }
 {
+    resetPerformanceStats();
     setObjectName("HorizonOverlay");
 }
 
 HorizonOverlay::~HorizonOverlay()
 {
     delete settingsDialog;
+    if (localTranslatorInstalled && localTranslator)
+        QCoreApplication::removeTranslator(localTranslator.get());
 }
 
 void HorizonOverlay::init()
 {
+    Q_INIT_RESOURCE(HorizonOverlay);
+
     qDebug() << "[HorizonOverlay] init";
 
     loadTranslator();
@@ -220,19 +429,268 @@ void HorizonOverlay::init()
     });
     loadSettings();
     reloadObstructionTable();
+
+    addAction("actionShow_HorizonOverlay", N_("Horizon Overlay"), N_("Show local obstruction horizon overlay"), "horizonOverlayVisible");
+    addAction("actionShow_HorizonOverlay_dialog", N_("Horizon Overlay"), N_("Show settings dialog"), this, [this]() {
+        configureGui(true);
+    });
+
+    setFlagShowToolbarButton(showToolbarButton);
+}
+
+void HorizonOverlay::update(double deltaTime)
+{
+    Q_UNUSED(deltaTime)
+
+    if (showToolbarButton && !toolbarButtonInBar)
+        setFlagShowToolbarButton(true);
+}
+
+bool HorizonOverlay::getOverlayVisible() const
+{
+    return visible;
+}
+
+void HorizonOverlay::setOverlayVisible(bool value)
+{
+    if (visible == value)
+        return;
+
+    visible = value;
+    saveSettings();
+    emit overlayVisibleChanged(visible);
+}
+
+bool HorizonOverlay::getFlagShowToolbarButton() const
+{
+    return showToolbarButton;
+}
+
+void HorizonOverlay::setFlagShowToolbarButton(bool value)
+{
+    StelGui* gui = dynamic_cast<StelGui*>(StelApp::getInstance().getGui());
+    if (gui)
+    {
+        if (value)
+        {
+            ensureToolbarButton();
+            if (toolbarButton && !toolbarButtonInBar)
+            {
+                gui->getButtonBar()->addButton(toolbarButton, "065-pluginsGroup");
+                toolbarButtonInBar = true;
+            }
+        }
+        else if (toolbarButtonInBar)
+        {
+            gui->getButtonBar()->hideButton("actionShow_HorizonOverlay");
+            toolbarButtonInBar = false;
+        }
+    }
+
+    if (showToolbarButton == value)
+        return;
+
+    showToolbarButton = value;
+    saveSettings();
+    emit flagShowToolbarButtonChanged(showToolbarButton);
+}
+
+bool HorizonOverlay::getDrawLine() const
+{
+    return drawLine;
+}
+
+void HorizonOverlay::setDrawLine(bool value)
+{
+    if (drawLine == value)
+        return;
+
+    drawLine = value;
+    saveSettings();
+    emit drawLineChanged(drawLine);
+}
+
+bool HorizonOverlay::getDrawFill() const
+{
+    return drawFill;
+}
+
+void HorizonOverlay::setDrawFill(bool value)
+{
+    if (drawFill == value)
+        return;
+
+    drawFill = value;
+    saveSettings();
+    emit drawFillChanged(drawFill);
+}
+
+bool HorizonOverlay::getEditMode() const
+{
+    return editMode;
+}
+
+void HorizonOverlay::setEditMode(bool value)
+{
+    if (editMode == value)
+        return;
+
+    editMode = value;
+    emit editModeChanged(editMode);
+}
+
+float HorizonOverlay::getLineOpacity() const
+{
+    return lineOpacity;
+}
+
+void HorizonOverlay::setLineOpacity(float value)
+{
+    value = qBound(0.0f, value, 1.0f);
+    if (qFuzzyCompare(lineOpacity, value))
+        return;
+
+    lineOpacity = value;
+    saveSettings();
+    emit lineOpacityChanged(lineOpacity);
+}
+
+float HorizonOverlay::getFillOpacity() const
+{
+    return fillOpacity;
+}
+
+void HorizonOverlay::setFillOpacity(float value)
+{
+    value = qBound(0.0f, value, 1.0f);
+    if (qFuzzyCompare(fillOpacity, value))
+        return;
+
+    fillOpacity = value;
+    saveSettings();
+    emit fillOpacityChanged(fillOpacity);
+}
+
+float HorizonOverlay::getLineWidth() const
+{
+    return lineWidth;
+}
+
+void HorizonOverlay::setLineWidth(float value)
+{
+    value = qBound(0.5f, value, 8.0f);
+    if (qFuzzyCompare(lineWidth, value))
+        return;
+
+    lineWidth = value;
+    saveSettings();
+    emit lineWidthChanged(lineWidth);
+}
+
+QColor HorizonOverlay::getLineColor() const
+{
+    return QColor(QString::fromStdString(lineColorHex()));
+}
+
+void HorizonOverlay::setLineColor(const QColor& color)
+{
+    if (!color.isValid())
+        return;
+
+    const std::string hex = color.name(QColor::HexRgb).toStdString();
+    if (hex == lineColorHex())
+        return;
+
+    setLineColorFromHex(hex);
+    saveSettings();
+    emit lineColorChanged(getLineColor());
+}
+
+QColor HorizonOverlay::getFillColor() const
+{
+    return QColor(QString::fromStdString(fillColorHex()));
+}
+
+void HorizonOverlay::setFillColor(const QColor& color)
+{
+    if (!color.isValid())
+        return;
+
+    const std::string hex = color.name(QColor::HexRgb).toStdString();
+    if (hex == fillColorHex())
+        return;
+
+    setFillColorFromHex(hex);
+    saveSettings();
+    emit fillColorChanged(getFillColor());
+}
+
+QString HorizonOverlay::getObstructionPath() const
+{
+    return QString::fromStdString(obstructionPath);
+}
+
+QString HorizonOverlay::getResolvedObstructionPath() const
+{
+    return QString::fromStdString(resolveObstructionPath(obstructionPath));
+}
+
+void HorizonOverlay::setObstructionPath(const QString& path)
+{
+    const std::string normalizedPath = path.trimmed().toStdString();
+    if (obstructionPath == normalizedPath)
+        return;
+
+    obstructionPath = normalizedPath;
+    saveSettings();
+    emit obstructionPathChanged(QString::fromStdString(obstructionPath));
+}
+
+QString HorizonOverlay::getPerformanceText() const
+{
+    return translateUi("Performance: %1 ms last, %2 ms avg, %3 ms max | FoV %4 deg | %5 | %6 samples")
+        .arg(performanceLastMs, 0, 'f', 3)
+        .arg(performanceLastAvgMs, 0, 'f', 3)
+        .arg(performanceLastMaxMs, 0, 'f', 3)
+        .arg(performanceLastFovDeg, 0, 'f', 1)
+        .arg(QString::fromLatin1(performanceLastFillPath))
+        .arg(static_cast<qulonglong>(performanceLastSampleCount));
+}
+
+void HorizonOverlay::createSettingsDialog()
+{
+    if (!settingsDialog)
+        settingsDialog = new HorizonOverlayDialog(this);
+}
+
+void HorizonOverlay::ensureToolbarButton()
+{
+    if (toolbarButton)
+        return;
+
+    toolbarButton = new StelButton(
+        nullptr,
+        QPixmap(":/HorizonOverlay/bt_HorizonOverlay_On.png"),
+        QPixmap(":/HorizonOverlay/bt_HorizonOverlay_Off.png"),
+        QPixmap(":/graphicGui/miscGlow32x32.png"),
+        "actionShow_HorizonOverlay",
+        false,
+        "actionShow_HorizonOverlay_dialog");
 }
 
 bool HorizonOverlay::configureGui(bool show)
 {
     if (!show)
+    {
+        if (settingsDialog)
+            settingsDialog->setVisible(false);
         return true;
+    }
 
     if (!settingsDialog)
         createSettingsDialog();
 
-    settingsDialog->show();
-    settingsDialog->raise();
-    settingsDialog->activateWindow();
+    settingsDialog->setVisible(true);
     return true;
 }
 
@@ -248,21 +706,29 @@ void HorizonOverlay::reloadObstructionTable()
     rebuildGeometry();
 }
 
-void HorizonOverlay::setupCurrentVAO()
+bool HorizonOverlay::setupCurrentVAO()
 {
-    auto& gl = *QOpenGLContext::currentContext()->functions();
+    QOpenGLContext* context = QOpenGLContext::currentContext();
+    if (!context || !context->functions() || !vbo || !vbo->isCreated())
+        return false;
+
+    auto& gl = *context->functions();
     vbo->bind();
     gl.glVertexAttribPointer(fullscreenQuadVertexAttribIndex, fullscreenQuadCoordsPerVertex, GL_FLOAT, false, 0, nullptr);
     vbo->release();
     gl.glEnableVertexAttribArray(fullscreenQuadVertexAttribIndex);
+    return true;
 }
 
-void HorizonOverlay::bindVAO()
+bool HorizonOverlay::bindVAO()
 {
     if (vao && vao->isCreated())
+    {
         vao->bind();
-    else
-        setupCurrentVAO();
+        return true;
+    }
+
+    return setupCurrentVAO();
 }
 
 void HorizonOverlay::releaseVAO()
@@ -273,21 +739,33 @@ void HorizonOverlay::releaseVAO()
         return;
     }
 
-    auto& gl = *QOpenGLContext::currentContext()->functions();
+    QOpenGLContext* context = QOpenGLContext::currentContext();
+    if (!context || !context->functions())
+        return;
+
+    auto& gl = *context->functions();
     gl.glDisableVertexAttribArray(fullscreenQuadVertexAttribIndex);
 }
 
 bool HorizonOverlay::ensureShaderProgram(const StelProjectorP& projector)
 {
-    if (samples.empty() || samples.size() > maxShaderObstructionSamples)
+    if (displaySamples.empty() || displaySamples.size() > maxShaderObstructionSamples)
+        return false;
+
+    QOpenGLContext* context = QOpenGLContext::currentContext();
+    if (!context || !context->functions())
         return false;
 
     if (!vbo)
     {
-        auto& gl = *QOpenGLContext::currentContext()->functions();
+        auto& gl = *context->functions();
         vbo = std::make_unique<QOpenGLBuffer>(QOpenGLBuffer::VertexBuffer);
-        vbo->create();
-        vbo->bind();
+        if (!vbo->create() || !vbo->bind())
+        {
+            vbo.reset();
+            return false;
+        }
+
         const GLfloat vertices[] = {
             -1.0f, -1.0f,
              1.0f, -1.0f,
@@ -298,10 +776,23 @@ bool HorizonOverlay::ensureShaderProgram(const StelProjectorP& projector)
         vbo->release();
 
         vao = std::make_unique<QOpenGLVertexArrayObject>();
-        vao->create();
-        bindVAO();
-        setupCurrentVAO();
-        releaseVAO();
+        if (!vao->create())
+            vao.reset();
+
+        if (vao && vao->isCreated())
+            vao->bind();
+
+        if (!setupCurrentVAO())
+        {
+            if (vao && vao->isCreated())
+                vao->release();
+            vao.reset();
+            vbo.reset();
+            return false;
+        }
+
+        if (vao && vao->isCreated())
+            vao->release();
     }
 
     if (fillShaderProgram && fillShaderProjector && projector->isSameProjection(*fillShaderProjector))
@@ -326,7 +817,10 @@ void main()
     if (!fillShaderProgram->log().isEmpty())
         qWarning().noquote() << "HorizonOverlay: vertex shader log:\n" << fillShaderProgram->log();
     if (!ok)
+    {
+        fillShaderProgram.reset();
         return false;
+    }
 
     QByteArray fragmentShader =
         StelOpenGL::globalShaderPrefix(StelOpenGL::FRAGMENT_SHADER) +
@@ -408,11 +902,17 @@ void main(void)
     if (!fillShaderProgram->log().isEmpty())
         qWarning().noquote() << "HorizonOverlay: fragment shader log:\n" << fillShaderProgram->log();
     if (!ok)
+    {
+        fillShaderProgram.reset();
         return false;
+    }
 
     fillShaderProgram->bindAttributeLocation("vertex", fullscreenQuadVertexAttribIndex);
     if (!StelPainter::linkProg(fillShaderProgram.get(), "HorizonOverlay fill shader"))
+    {
+        fillShaderProgram.reset();
         return false;
+    }
 
     fillShaderProgram->bind();
     fillShaderVars.projectionMatrixInverse = fillShaderProgram->uniformLocation("projectionMatrixInverse");
@@ -430,8 +930,8 @@ bool HorizonOverlay::drawShaderFill(StelPainter& painter, const StelProjectorP& 
         return false;
 
     QVector<QVector2D> shaderSamples;
-    shaderSamples.reserve(static_cast<int>(samples.size()));
-    for (const Sample& sample : samples)
+    shaderSamples.reserve(static_cast<int>(displaySamples.size()));
+    for (const Sample& sample : displaySamples)
         shaderSamples.push_back(QVector2D(static_cast<float>(sample.azDeg), static_cast<float>(sample.altDeg)));
 
     fillShaderProgram->bind();
@@ -443,7 +943,11 @@ bool HorizonOverlay::drawShaderFill(StelPainter& painter, const StelProjectorP& 
 
     painter.glFuncs()->glEnable(GL_BLEND);
     painter.glFuncs()->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    bindVAO();
+    if (!bindVAO())
+    {
+        fillShaderProgram->release();
+        return false;
+    }
     painter.glFuncs()->glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     releaseVAO();
     fillShaderProgram->release();
@@ -538,22 +1042,77 @@ void HorizonOverlay::drawLegacyFill(StelPainter& painter, const StelProjectorP& 
         painter.drawStelVertexArray(fillArray, true);
 }
 
+void HorizonOverlay::drawScreenSpaceLine(StelPainter& painter, const StelProjectorP& projector) const
+{
+    if (geometry.size() < 2)
+        return;
+
+    std::vector<float> lineVertices;
+    lineVertices.reserve(geometry.size() * 4);
+
+    bool hasPrevious = false;
+    ScreenPoint previous{ 0.0f, 0.0f };
+    const double maxJumpSquared = screenSpaceLineMaxJumpPx * screenSpaceLineMaxJumpPx;
+
+    for (const RenderSample& sample : geometry)
+    {
+        Vec3d screenPos;
+        if (!projector->project(sample.top, screenPos) ||
+            !std::isfinite(screenPos[0]) ||
+            !std::isfinite(screenPos[1]))
+        {
+            hasPrevious = false;
+            continue;
+        }
+
+        const ScreenPoint current{ static_cast<float>(screenPos[0]), static_cast<float>(screenPos[1]) };
+        if (hasPrevious)
+        {
+            const double dx = static_cast<double>(current.x - previous.x);
+            const double dy = static_cast<double>(current.y - previous.y);
+            if (dx * dx + dy * dy <= maxJumpSquared)
+            {
+                lineVertices.push_back(previous.x);
+                lineVertices.push_back(previous.y);
+                lineVertices.push_back(current.x);
+                lineVertices.push_back(current.y);
+            }
+        }
+
+        previous = current;
+        hasPrevious = true;
+    }
+
+    if (lineVertices.empty())
+        return;
+
+    painter.setColor(lineRgb[0], lineRgb[1], lineRgb[2], lineOpacity);
+    painter.setLineSmooth(true);
+    painter.setLineWidth(lineWidth);
+    painter.enableClientStates(true);
+    painter.setVertexPointer(2, GL_FLOAT, lineVertices.data());
+    painter.drawFromArray(StelPainter::Lines, static_cast<int>(lineVertices.size() / 2), 0, false);
+    painter.enableClientStates(false);
+    painter.setLineWidth(1.0f);
+    painter.setLineSmooth(false);
+}
+
 double HorizonOverlay::obstructionAltitudeAt(double azDeg) const
 {
-    if (samples.empty())
+    if (displaySamples.empty())
         return 0.0;
 
     azDeg = std::fmod(azDeg, 360.0);
     if (azDeg < 0.0)
         azDeg += 360.0;
 
-    if (samples.size() == 1)
-        return samples.front().altDeg;
+    if (displaySamples.size() == 1)
+        return displaySamples.front().altDeg;
 
-    for (std::size_t i = 1; i < samples.size(); ++i)
+    for (std::size_t i = 1; i < displaySamples.size(); ++i)
     {
-        const Sample& previous = samples[i - 1];
-        const Sample& current = samples[i];
+        const Sample& previous = displaySamples[i - 1];
+        const Sample& current = displaySamples[i];
         if (azDeg < previous.azDeg || azDeg > current.azDeg)
             continue;
 
@@ -565,7 +1124,7 @@ double HorizonOverlay::obstructionAltitudeAt(double azDeg) const
         return previous.altDeg + (current.altDeg - previous.altDeg) * t;
     }
 
-    return samples.back().altDeg;
+    return displaySamples.back().altDeg;
 }
 
 bool HorizonOverlay::vectorToAltAz(const Vec3d& direction, double& azDeg, double& altDeg) const
@@ -588,11 +1147,126 @@ bool HorizonOverlay::vectorToAltAz(const Vec3d& direction, double& azDeg, double
     return true;
 }
 
+void HorizonOverlay::resetPerformanceStats()
+{
+    performanceWindowFrames = 0;
+    performanceWindowMs = 0.0;
+    performanceWindowMaxMs = 0.0;
+    performanceLastMs = 0.0;
+    performanceLastAvgMs = 0.0;
+    performanceLastMaxMs = 0.0;
+    performanceLastFovDeg = 0.0;
+    performanceLastFillPath = "not drawn";
+    performanceLastSampleCount = 0;
+}
+
+void HorizonOverlay::recordPerformanceSample(double elapsedMs, const char* fillPath, double fovDeg)
+{
+    performanceLastMs = elapsedMs;
+    performanceLastFovDeg = fovDeg;
+    performanceLastFillPath = fillPath;
+    performanceLastSampleCount = displaySamples.size();
+    performanceWindowMs += elapsedMs;
+    performanceWindowMaxMs = std::max(performanceWindowMaxMs, elapsedMs);
+    ++performanceWindowFrames;
+
+    if (performanceWindowFrames < 30)
+        return;
+
+    performanceLastAvgMs = performanceWindowMs / static_cast<double>(performanceWindowFrames);
+    performanceLastMaxMs = performanceWindowMaxMs;
+    performanceWindowFrames = 0;
+    performanceWindowMs = 0.0;
+    performanceWindowMaxMs = 0.0;
+    updatePerformanceLabel();
+}
+
+void HorizonOverlay::updatePerformanceLabel()
+{
+    if (!settingsDialog)
+        return;
+
+    settingsDialog->updatePerformanceText();
+}
+
 double HorizonOverlay::getCallOrder(StelModuleActionName actionName) const
 {
     if (actionName == StelModule::ActionDraw)
         return 60.0;
+    if (actionName == StelModule::ActionHandleMouseClicks || actionName == StelModule::ActionHandleMouseMoves)
+        return -11.0;
     return 0.0;
+}
+
+void HorizonOverlay::handleMouseClicks(QMouseEvent* event)
+{
+    if (!event || !editMode)
+    {
+        if (event)
+            event->setAccepted(false);
+        return;
+    }
+
+    const bool isEditButton = event->button() == Qt::LeftButton || event->button() == Qt::RightButton;
+    const bool hasEditModifier = event->modifiers().testFlag(Qt::ShiftModifier);
+    if (!isEditButton || !hasEditModifier)
+    {
+        event->setAccepted(false);
+        return;
+    }
+
+    if (event->type() != QEvent::MouseButtonPress)
+    {
+        event->setAccepted(true);
+        return;
+    }
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    const double x = event->position().x();
+    const double y = event->position().y();
+#else
+    const double x = event->x();
+    const double y = event->y();
+#endif
+
+    if (event->button() == Qt::LeftButton)
+    {
+        addSampleFromScreen(x, y);
+        event->setAccepted(true);
+        return;
+    }
+    else if (event->button() == Qt::RightButton)
+    {
+        removeNearestSample(x, y);
+        event->setAccepted(true);
+        return;
+    }
+
+    event->setAccepted(true);
+}
+
+bool HorizonOverlay::handleMouseMoves(int x, int y, Qt::MouseButtons buttons)
+{
+    if (!editMode)
+        return false;
+
+    const bool hasEditModifier = QGuiApplication::keyboardModifiers().testFlag(Qt::ShiftModifier);
+    if (!hasEditModifier)
+        return false;
+
+    if (buttons.testFlag(Qt::LeftButton))
+    {
+        addSampleFromScreen(x, y);
+        return true;
+    }
+
+    if (buttons.testFlag(Qt::RightButton))
+    {
+        removeNearestSample(x, y);
+        return true;
+    }
+
+    return false;
 }
 
 void HorizonOverlay::draw(StelCore* core)
@@ -601,7 +1275,16 @@ void HorizonOverlay::draw(StelCore* core)
         return;
 
     const StelProjectorP projector = core->getProjection(StelCore::FrameAltAz);
+    if (!projector)
+        return;
+
+    QElapsedTimer performanceTimer;
+    performanceTimer.start();
+
     StelPainter painter(projector);
+    const double fovDeg = projector->getFov();
+    const bool useScreenSpaceOverlay = fovDeg > screenSpaceFillFovThresholdDeg;
+    const char* fillPath = "line only";
 
     bool oldBlend = painter.getBlending();
     painter.setBlending(true);
@@ -617,36 +1300,55 @@ void HorizonOverlay::draw(StelCore* core)
     const double apertureDeg = qBound(115.0, static_cast<double>(projector->getFov()) * 0.5 + 35.0, 170.0);
     const SphericalCap cameraCap(viewDirection, std::cos(qDegreesToRadians(apertureDeg)));
 
-    if (drawFill && geometry.size() >= 2 && projector->getFov() > screenSpaceFillFovThresholdDeg)
+    if (drawFill && geometry.size() >= 2 && useScreenSpaceOverlay)
     {
-        if (!drawShaderFill(painter, projector))
+        if (drawShaderFill(painter, projector))
+            fillPath = "shader mask";
+        else
+        {
             drawCpuScreenSpaceFill(painter, projector);
+            fillPath = "cpu mask";
+        }
     }
     else if (drawFill && geometry.size() >= 2)
     {
         drawLegacyFill(painter, projector, cameraCap);
+        fillPath = "legacy mesh";
+    }
+    else if (!drawLine)
+    {
+        fillPath = "disabled";
     }
 
     if (drawLine && geometry.size() >= 2)
     {
-        painter.setColor(lineRgb[0], lineRgb[1], lineRgb[2], lineOpacity);
-        painter.setLineSmooth(true);
-        painter.setLineWidth(lineWidth);
+        if (useScreenSpaceOverlay)
+        {
+            drawScreenSpaceLine(painter, projector);
+        }
+        else
+        {
+            painter.setColor(lineRgb[0], lineRgb[1], lineRgb[2], lineOpacity);
+            painter.setLineSmooth(true);
+            painter.setLineWidth(lineWidth);
 
-        StelVertexArray lineArray(StelVertexArray::LineStrip);
-        lineArray.vertex.reserve(static_cast<int>(geometry.size()));
-        for (const RenderSample& sample : geometry)
-            lineArray.vertex.append(sample.top);
+            StelVertexArray lineArray(StelVertexArray::LineStrip);
+            lineArray.vertex.reserve(static_cast<int>(geometry.size()));
+            for (const RenderSample& sample : geometry)
+                lineArray.vertex.append(sample.top);
 
-        painter.drawGreatCircleArcs(lineArray, &cameraCap);
+            painter.drawGreatCircleArcs(lineArray, &cameraCap);
 
-        painter.setLineWidth(1.0f);
-        painter.setLineSmooth(false);
+            painter.setLineWidth(1.0f);
+            painter.setLineSmooth(false);
+        }
     }
 
     painter.setDepthMask(true);
     painter.setDepthTest(true);
     painter.setBlending(oldBlend);
+
+    recordPerformanceSample(static_cast<double>(performanceTimer.nsecsElapsed()) / 1000000.0, fillPath, fovDeg);
 }
 
 std::string HorizonOverlay::defaultObstructionPath() const
@@ -666,9 +1368,15 @@ std::string HorizonOverlay::moduleDirPath() const
 
 void HorizonOverlay::loadTranslator()
 {
+    if (localTranslatorInstalled && localTranslator)
+    {
+        QCoreApplication::removeTranslator(localTranslator.get());
+        localTranslatorInstalled = false;
+    }
+
     localTranslator.reset();
 
-    const QString localeName = StelApp::getInstance().getLocaleMgr().getAppLanguage();
+    const QString localeName = currentTranslationLocale();
     if (localeName.isEmpty())
         return;
 
@@ -679,6 +1387,8 @@ void HorizonOverlay::loadTranslator()
         return;
     }
 
+    QCoreApplication::installTranslator(localTranslator.get());
+    localTranslatorInstalled = true;
     qDebug() << "[HorizonOverlay] Loaded translations for" << localeName;
 }
 
@@ -687,10 +1397,12 @@ void HorizonOverlay::reloadTranslator()
     loadTranslator();
 
     if (settingsDialog)
-    {
-        delete settingsDialog;
-        settingsDialog = nullptr;
-    }
+        settingsDialog->retranslate();
+}
+
+QString HorizonOverlay::currentTranslationLocale() const
+{
+    return normalizedSupportedLocale(StelApp::getInstance().getLocaleMgr().getAppLanguage());
 }
 
 QString HorizonOverlay::translateUi(const char* text) const
@@ -702,7 +1414,7 @@ QString HorizonOverlay::translateUi(const char* text) const
             return translated;
     }
 
-    return q_(text);
+    return QString::fromUtf8(text);
 }
 
 std::string HorizonOverlay::resolveObstructionPath(const std::string& path) const
@@ -723,12 +1435,8 @@ void HorizonOverlay::loadSettings()
     std::string line;
     while (std::getline(file, line))
     {
-        const std::size_t commentIndex = line.find('#');
-        if (commentIndex != std::string::npos)
-            line.erase(commentIndex);
-
         line = trim(line);
-        if (line.empty() || line.front() == '[')
+        if (line.empty() || line.front() == '#' || line.front() == '[')
             continue;
 
         const std::size_t equalsIndex = line.find('=');
@@ -740,6 +1448,8 @@ void HorizonOverlay::loadSettings()
 
         if (key == "visible")
             visible = parseBool(value, visible);
+        else if (key == "showtoolbarbutton")
+            showToolbarButton = parseBool(value, showToolbarButton);
         else if (key == "drawline")
             drawLine = parseBool(value, drawLine);
         else if (key == "drawfill")
@@ -763,10 +1473,14 @@ void HorizonOverlay::saveSettings() const
 {
     std::ofstream file(configPath(), std::ios::trunc);
     if (!file.is_open())
+    {
+        qWarning() << "[HorizonOverlay] Could not save settings:" << QString::fromStdString(configPath());
         return;
+    }
 
     file << "[overlay]\n";
     file << "visible=" << (visible ? "true" : "false") << "\n";
+    file << "showToolbarButton=" << (showToolbarButton ? "true" : "false") << "\n";
     file << "drawLine=" << (drawLine ? "true" : "false") << "\n";
     file << "drawFill=" << (drawFill ? "true" : "false") << "\n";
     file << "lineColor=" << lineColorHex() << "\n";
@@ -797,146 +1511,140 @@ std::string HorizonOverlay::fillColorHex() const
     return rgbToHex(fillRgb);
 }
 
-void HorizonOverlay::createSettingsDialog()
+void HorizonOverlay::sortAndNormalizeSamples()
 {
-    settingsDialog = new QDialog();
-    settingsDialog->setWindowTitle(translateUi("Horizon Overlay Settings"));
-    settingsDialog->setAttribute(Qt::WA_DeleteOnClose, false);
-    settingsDialog->setStyleSheet(
-        "QDialog { background-color: #2f3331; color: #e8e8e8; }"
-        "QLabel, QCheckBox { color: #e8e8e8; }"
-        "QLineEdit { background-color: #171817; color: #f2f2f2; border: 1px solid #4f5653; border-radius: 3px; padding: 4px; }"
-        "QPushButton { background-color: #444b48; color: #f4f4f4; border: 1px solid #6a7470; border-radius: 4px; padding: 6px 10px; }"
-        "QPushButton:hover { background-color: #56615c; }"
-        "QPushButton:pressed { background-color: #38403c; }"
-        "QPushButton:disabled { background-color: #343937; color: #8d9490; border-color: #4a504d; }"
-        "QSlider::groove:horizontal { height: 6px; background: #1f2221; border: 1px solid #58615c; border-radius: 3px; }"
-        "QSlider::sub-page:horizontal { background: #4aa3df; border-radius: 3px; }"
-        "QSlider::handle:horizontal { width: 16px; margin: -5px 0; background: #eeeeee; border: 1px solid #202020; border-radius: 3px; }");
+    for (Sample& sample : samples)
+    {
+        sample.azDeg = normalizeAzimuth(sample.azDeg, true);
+        sample.altDeg = qBound(-90.0, sample.altDeg, 90.0);
+    }
 
-    auto* mainLayout = new QVBoxLayout(settingsDialog);
-    auto* grid = new QGridLayout();
-    mainLayout->addLayout(grid);
-
-    auto* visibleBox = new QCheckBox(translateUi("Show overlay"));
-    visibleBox->setChecked(visible);
-    grid->addWidget(visibleBox, 0, 0, 1, 2);
-
-    auto* fillBox = new QCheckBox(translateUi("Show filled obstruction area"));
-    fillBox->setChecked(drawFill);
-    grid->addWidget(fillBox, 1, 0, 1, 2);
-
-    auto* lineBox = new QCheckBox(translateUi("Show outline"));
-    lineBox->setChecked(drawLine);
-    grid->addWidget(lineBox, 2, 0, 1, 2);
-
-    auto makeSlider = [&](double value) {
-        auto* slider = new QSlider(Qt::Horizontal);
-        slider->setRange(0, 100);
-        slider->setValue(static_cast<int>(std::round(qBound(0.0, value, 1.0) * 100.0)));
-        return slider;
-    };
-
-    auto* fillOpacityLabel = new QLabel(translateUi("Fill opacity: %1%").arg(static_cast<int>(std::round(fillOpacity * 100.0f))));
-    auto* fillOpacitySlider = makeSlider(fillOpacity);
-    grid->addWidget(fillOpacityLabel, 3, 0);
-    grid->addWidget(fillOpacitySlider, 3, 1);
-
-    auto* lineOpacityLabel = new QLabel(translateUi("Line opacity: %1%").arg(static_cast<int>(std::round(lineOpacity * 100.0f))));
-    auto* lineOpacitySlider = makeSlider(lineOpacity);
-    grid->addWidget(lineOpacityLabel, 4, 0);
-    grid->addWidget(lineOpacitySlider, 4, 1);
-
-    auto* fillColorButton = new QPushButton(translateUi("Fill color"));
-    auto* lineColorButton = new QPushButton(translateUi("Line color"));
-    auto applyButtonColor = [](QPushButton* button, const std::string& color) {
-        const QColor background(QString::fromStdString(color));
-        const QString textColor = background.lightness() > 150 ? "#101010" : "#f4f4f4";
-        button->setStyleSheet(QString("QPushButton { background-color: %1; color: %2; border: 1px solid #7c8580; border-radius: 4px; padding: 6px 10px; }")
-            .arg(QString::fromStdString(color), textColor));
-    };
-    applyButtonColor(fillColorButton, fillColorHex());
-    applyButtonColor(lineColorButton, lineColorHex());
-    grid->addWidget(fillColorButton, 5, 0);
-    grid->addWidget(lineColorButton, 5, 1);
-
-    auto* fileEdit = new QLineEdit(QString::fromStdString(obstructionPath));
-    auto* browseButton = new QPushButton(translateUi("Choose file..."));
-    auto* reloadButton = new QPushButton(translateUi("Reload table"));
-    grid->addWidget(new QLabel(translateUi("Obstruction table:")), 6, 0);
-    grid->addWidget(fileEdit, 6, 1);
-    grid->addWidget(browseButton, 7, 0);
-    grid->addWidget(reloadButton, 7, 1);
-
-    auto* closeButton = new QPushButton(translateUi("Close"));
-    mainLayout->addWidget(closeButton);
-
-    connect(visibleBox, &QCheckBox::toggled, settingsDialog, [this](bool checked) {
-        visible = checked;
-        saveSettings();
+    std::sort(samples.begin(), samples.end(), [](const Sample& a, const Sample& b) {
+        return a.azDeg < b.azDeg;
     });
-    connect(fillBox, &QCheckBox::toggled, settingsDialog, [this](bool checked) {
-        drawFill = checked;
-        saveSettings();
-    });
-    connect(lineBox, &QCheckBox::toggled, settingsDialog, [this](bool checked) {
-        drawLine = checked;
-        saveSettings();
-    });
-    connect(fillOpacitySlider, &QSlider::valueChanged, settingsDialog, [this, fillOpacityLabel](int value) {
-        fillOpacity = static_cast<float>(value) / 100.0f;
-        fillOpacityLabel->setText(translateUi("Fill opacity: %1%").arg(value));
-        saveSettings();
-    });
-    connect(lineOpacitySlider, &QSlider::valueChanged, settingsDialog, [this, lineOpacityLabel](int value) {
-        lineOpacity = static_cast<float>(value) / 100.0f;
-        lineOpacityLabel->setText(translateUi("Line opacity: %1%").arg(value));
-        saveSettings();
-    });
-    connect(fillColorButton, &QPushButton::clicked, settingsDialog, [this, fillColorButton, applyButtonColor]() {
-        const QColor initial(QString::fromStdString(fillColorHex()));
-        const QColor color = QColorDialog::getColor(initial, settingsDialog, translateUi("Fill color"));
-        if (!color.isValid())
-            return;
-        setFillColorFromHex(color.name(QColor::HexRgb).toStdString());
-        applyButtonColor(fillColorButton, fillColorHex());
-        saveSettings();
-    });
-    connect(lineColorButton, &QPushButton::clicked, settingsDialog, [this, lineColorButton, applyButtonColor]() {
-        const QColor initial(QString::fromStdString(lineColorHex()));
-        const QColor color = QColorDialog::getColor(initial, settingsDialog, translateUi("Line color"));
-        if (!color.isValid())
-            return;
-        setLineColorFromHex(color.name(QColor::HexRgb).toStdString());
-        applyButtonColor(lineColorButton, lineColorHex());
-        saveSettings();
-    });
-    connect(fileEdit, &QLineEdit::editingFinished, settingsDialog, [this, fileEdit]() {
-        obstructionPath = fileEdit->text().trimmed().toStdString();
-        saveSettings();
-    });
-    connect(browseButton, &QPushButton::clicked, settingsDialog, [this, fileEdit]() {
-        const QString selected = QFileDialog::getOpenFileName(
-            settingsDialog,
-            translateUi("Choose obstruction table"),
-            QString::fromStdString(resolveObstructionPath(obstructionPath)),
-            translateUi("Text files (*.txt *.hrz *.csv);;All files (*)"));
-        if (selected.isEmpty())
-            return;
 
-        obstructionPath = selected.toStdString();
-        fileEdit->setText(selected);
-        saveSettings();
-        reloadObstructionTable();
-    });
-    connect(reloadButton, &QPushButton::clicked, settingsDialog, [this, fileEdit]() {
-        obstructionPath = fileEdit->text().trimmed().toStdString();
-        saveSettings();
-        reloadObstructionTable();
-    });
-    connect(closeButton, &QPushButton::clicked, settingsDialog, &QDialog::hide);
+    std::vector<Sample> normalized;
+    normalized.reserve(samples.size() + 2);
+    for (const Sample& sample : samples)
+    {
+        if (!normalized.empty() && qFuzzyCompare(normalized.back().azDeg + 1.0, sample.azDeg + 1.0))
+            normalized.back() = sample;
+        else
+            normalized.push_back(sample);
+    }
 
-    settingsDialog->resize(520, 260);
+    samples = std::move(normalized);
+    if (!samples.empty() && samples.front().azDeg > 0.0)
+        samples.insert(samples.begin(), { 0.0, samples.front().altDeg });
+    if (!samples.empty() && samples.back().azDeg < 360.0)
+        samples.push_back({ 360.0, samples.front().altDeg });
+}
+
+void HorizonOverlay::addSample(double azDeg, double altDeg)
+{
+    azDeg = normalizeAzimuth(azDeg, false);
+    altDeg = qBound(-90.0, altDeg, 90.0);
+
+    const auto duplicateEnd = std::remove_if(samples.begin(), samples.end(), [azDeg](const Sample& sample) {
+        const double sampleAz = normalizeAzimuth(sample.azDeg, false);
+        return std::abs(sampleAz - azDeg) < editMinAzSpacingDeg ||
+               std::abs(sampleAz - azDeg + 360.0) < editMinAzSpacingDeg ||
+               std::abs(sampleAz - azDeg - 360.0) < editMinAzSpacingDeg;
+    });
+    samples.erase(duplicateEnd, samples.end());
+    samples.push_back({ azDeg, altDeg });
+
+    sortAndNormalizeSamples();
+    rebuildGeometry();
+}
+
+bool HorizonOverlay::addSampleFromScreen(double screenX, double screenY)
+{
+    const StelProjectorP projector = StelApp::getInstance().getCore()->getProjection(StelCore::FrameAltAz, StelCore::RefractionOff);
+    Vec3d direction;
+    if (!projector || !projector->unProject(screenX, screenY, direction))
+        return false;
+
+    double azDeg = 0.0;
+    double altDeg = 0.0;
+    if (!vectorToAltAz(direction, azDeg, altDeg))
+        return false;
+
+    addSample(azDeg, altDeg);
+    return true;
+}
+
+bool HorizonOverlay::removeNearestSample(double screenX, double screenY)
+{
+    if (samples.empty())
+        return false;
+
+    const StelProjectorP projector = StelApp::getInstance().getCore()->getProjection(StelCore::FrameAltAz, StelCore::RefractionOff);
+    if (!projector)
+        return false;
+
+    double bestDistanceSquared = 80.0 * 80.0;
+    double targetAz = -1.0;
+
+    for (const Sample& sample : samples)
+    {
+        Vec3d screenPos;
+        if (!projector->project(altAzToVector(sample.azDeg, sample.altDeg), screenPos))
+            continue;
+
+        const double dx = screenPos[0] - screenX;
+        const double dy = screenPos[1] - screenY;
+        const double distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared < bestDistanceSquared)
+        {
+            bestDistanceSquared = distanceSquared;
+            targetAz = normalizeAzimuth(sample.azDeg, false);
+        }
+    }
+
+    if (targetAz < 0.0)
+        return false;
+
+    const auto newEnd = std::remove_if(samples.begin(), samples.end(), [targetAz](const Sample& sample) {
+        const double sampleAz = normalizeAzimuth(sample.azDeg, false);
+        return std::abs(sampleAz - targetAz) < 0.25 || std::abs(sampleAz - targetAz + 360.0) < 0.25 || std::abs(sampleAz - targetAz - 360.0) < 0.25;
+    });
+
+    if (newEnd == samples.end())
+        return false;
+
+    samples.erase(newEnd, samples.end());
+    sortAndNormalizeSamples();
+    rebuildGeometry();
+    return true;
+}
+
+bool HorizonOverlay::saveObstructionTable() const
+{
+    const std::string path = resolveObstructionPath(obstructionPath);
+    std::ofstream file(path, std::ios::trunc);
+    if (!file.is_open())
+    {
+        qWarning() << "[HorizonOverlay] Could not save obstruction table:" << QString::fromStdString(path);
+        return false;
+    }
+
+    file << "# HorizonOverlay obstruction table\n";
+    file << "# Az Alt\n";
+    file << std::fixed << std::setprecision(3);
+    const std::vector<Sample>& samplesToSave = displaySamples.empty() ? samples : displaySamples;
+    for (const Sample& sample : samplesToSave)
+        file << sample.azDeg << ' ' << sample.altDeg << '\n';
+
+    qInfo() << "[HorizonOverlay] Saved obstruction table:" << QString::fromStdString(path);
+    return true;
+}
+
+void HorizonOverlay::clearSamples()
+{
+    samples.clear();
+    displaySamples.clear();
+    geometry.clear();
 }
 
 bool HorizonOverlay::loadObstructionTable(const std::string& path)
@@ -947,29 +1655,24 @@ bool HorizonOverlay::loadObstructionTable(const std::string& path)
 
     std::vector<Sample> parsed;
     std::string line;
+    int azColumn = -1;
+    int altColumn = -1;
 
     while (std::getline(file, line))
     {
-        const std::size_t commentIndex = line.find('#');
-        if (commentIndex != std::string::npos)
-            line.erase(commentIndex);
-        std::replace(line.begin(), line.end(), ',', ' ');
-        std::replace(line.begin(), line.end(), ';', ' ');
-
-        std::istringstream stream(line);
-        double az = 0.0;
-        double alt = 0.0;
-        if (!(stream >> az >> alt))
+        const std::vector<std::string> tokens = splitObstructionRow(line);
+        if (tokens.empty())
             continue;
 
-        const double rawAz = az;
-        const bool isExplicitFullCircle = rawAz > 0.0 && qFuzzyIsNull(std::fmod(rawAz, 360.0));
+        if (detectObstructionHeader(tokens, azColumn, altColumn))
+            continue;
 
-        az = std::fmod(rawAz, 360.0);
-        if (az < 0.0)
-            az += 360.0;
-        if (isExplicitFullCircle)
-            az = 360.0;
+        double az = 0.0;
+        double alt = 0.0;
+        if (!parseObstructionSample(tokens, azColumn, altColumn, az, alt))
+            continue;
+
+        az = normalizeAzimuth(az, true);
 
         const auto duplicate = std::find_if(parsed.begin(), parsed.end(), [az](const Sample& sample) {
             return qFuzzyCompare(sample.azDeg + 1.0, az + 1.0);
@@ -983,23 +1686,8 @@ bool HorizonOverlay::loadObstructionTable(const std::string& path)
     if (parsed.size() < 2)
         return false;
 
-    std::sort(parsed.begin(), parsed.end(), [](const Sample& a, const Sample& b) {
-        return a.azDeg < b.azDeg;
-    });
-
-    samples.clear();
-    for (const Sample& sample : parsed)
-    {
-        if (!samples.empty() && qFuzzyCompare(samples.back().azDeg + 1.0, sample.azDeg + 1.0))
-            samples.back() = sample;
-        else
-            samples.push_back(sample);
-    }
-
-    if (!samples.empty() && samples.front().azDeg > 0.0)
-        samples.insert(samples.begin(), { 0.0, samples.front().altDeg });
-    if (!samples.empty() && samples.back().azDeg < 360.0)
-        samples.push_back({ 360.0, samples.front().altDeg });
+    samples = std::move(parsed);
+    sortAndNormalizeSamples();
 
     return samples.size() >= 2;
 }
@@ -1016,19 +1704,160 @@ void HorizonOverlay::useFallbackTable()
     };
 }
 
-void HorizonOverlay::rebuildGeometry()
+void HorizonOverlay::rebuildDisplaySamples()
 {
-    geometry.clear();
-
+    displaySamples.clear();
     if (samples.empty())
         return;
 
-    appendGeometrySample(samples.front().azDeg, samples.front().altDeg);
-
-    for (std::size_t i = 1; i < samples.size(); ++i)
+    std::vector<Sample> cleaned;
+    cleaned.reserve(samples.size());
+    for (std::size_t i = 0; i < samples.size(); ++i)
     {
-        const Sample& previous = samples[i - 1];
-        const Sample& current = samples[i];
+        const Sample& sample = samples[i];
+        if (cleaned.empty())
+        {
+            cleaned.push_back(sample);
+            continue;
+        }
+
+        const bool isLast = i + 1 == samples.size();
+        const double span = sample.azDeg - cleaned.back().azDeg;
+        if (!isLast && span > 0.0 && span < editMinAzSpacingDeg)
+        {
+            cleaned.back().altDeg = (cleaned.back().altDeg + sample.altDeg) * 0.5;
+            continue;
+        }
+
+        cleaned.push_back(sample);
+    }
+
+    if (cleaned.size() <= 3)
+    {
+        displaySamples = std::move(cleaned);
+        return;
+    }
+
+    std::vector<bool> keep(cleaned.size(), false);
+    keep.front() = true;
+    keep.back() = true;
+
+    std::function<void(std::size_t, std::size_t)> simplify = [&](std::size_t first, std::size_t last) {
+        if (last <= first + 1)
+            return;
+
+        const Sample& a = cleaned[first];
+        const Sample& b = cleaned[last];
+        const double span = b.azDeg - a.azDeg;
+        if (span <= 0.0)
+            return;
+
+        double maxError = 0.0;
+        std::size_t maxIndex = first;
+        for (std::size_t i = first + 1; i < last; ++i)
+        {
+            const double t = (cleaned[i].azDeg - a.azDeg) / span;
+            const double expectedAlt = a.altDeg + (b.altDeg - a.altDeg) * t;
+            const double error = std::abs(cleaned[i].altDeg - expectedAlt);
+            if (error > maxError)
+            {
+                maxError = error;
+                maxIndex = i;
+            }
+        }
+
+        if (maxError <= autoSimplifyToleranceDeg)
+            return;
+
+        keep[maxIndex] = true;
+        simplify(first, maxIndex);
+        simplify(maxIndex, last);
+    };
+    simplify(0, cleaned.size() - 1);
+
+    std::vector<Sample> simplified;
+    simplified.reserve(cleaned.size());
+    for (std::size_t i = 0; i < cleaned.size(); ++i)
+    {
+        if (keep[i])
+            simplified.push_back(cleaned[i]);
+    }
+
+    displaySamples = simplified;
+    if (displaySamples.size() <= 3)
+        return;
+
+    std::vector<Sample> smoothed = displaySamples;
+    for (std::size_t i = 1; i + 1 < displaySamples.size(); ++i)
+    {
+        const double leftSpan = displaySamples[i].azDeg - displaySamples[i - 1].azDeg;
+        const double rightSpan = displaySamples[i + 1].azDeg - displaySamples[i].azDeg;
+        if (leftSpan <= 0.0 || rightSpan <= 0.0 || leftSpan > 8.0 || rightSpan > 8.0)
+            continue;
+
+        const double prevAlt = displaySamples[i - 1].altDeg;
+        const double currAlt = displaySamples[i].altDeg;
+        const double nextAlt = displaySamples[i + 1].altDeg;
+        const double medianAlt = std::max(std::min(prevAlt, currAlt), std::min(std::max(prevAlt, currAlt), nextAlt));
+
+        if (std::abs(currAlt - medianAlt) > 3.0)
+            smoothed[i].altDeg = medianAlt * 0.7 + currAlt * 0.3;
+        else
+            smoothed[i].altDeg = prevAlt * 0.25 + currAlt * 0.5 + nextAlt * 0.25;
+    }
+
+    std::vector<Sample> resampled;
+    resampled.reserve(static_cast<std::size_t>(std::ceil(360.0 / autoSmoothResampleStepDeg)) + 2);
+    resampled.push_back(smoothed.front());
+
+    for (std::size_t i = 1; i < smoothed.size(); ++i)
+    {
+        const Sample& previous = smoothed[i - 1];
+        const Sample& current = smoothed[i];
+        const double span = current.azDeg - previous.azDeg;
+        if (span <= 0.0)
+            continue;
+
+        const Sample& p0 = i >= 2 ? smoothed[i - 2] : previous;
+        const Sample& p3 = i + 1 < smoothed.size() ? smoothed[i + 1] : current;
+        const int steps = std::max(1, static_cast<int>(std::ceil(span / autoSmoothResampleStepDeg)));
+
+        for (int step = 1; step <= steps; ++step)
+        {
+            const double t = static_cast<double>(step) / static_cast<double>(steps);
+            const double t2 = t * t;
+            const double t3 = t2 * t;
+            double alt = 0.5 * ((2.0 * previous.altDeg) +
+                                (-p0.altDeg + current.altDeg) * t +
+                                (2.0 * p0.altDeg - 5.0 * previous.altDeg + 4.0 * current.altDeg - p3.altDeg) * t2 +
+                                (-p0.altDeg + 3.0 * previous.altDeg - 3.0 * current.altDeg + p3.altDeg) * t3);
+
+            const double segmentMin = std::min(previous.altDeg, current.altDeg);
+            const double segmentMax = std::max(previous.altDeg, current.altDeg);
+            alt = qBound(segmentMin, alt, segmentMax);
+
+            const double az = previous.azDeg + span * t;
+            resampled.push_back({ az, alt });
+        }
+    }
+
+    displaySamples = std::move(resampled);
+}
+
+void HorizonOverlay::rebuildGeometry()
+{
+    geometry.clear();
+    rebuildDisplaySamples();
+
+    if (displaySamples.empty())
+        return;
+
+    appendGeometrySample(displaySamples.front().azDeg, displaySamples.front().altDeg);
+
+    for (std::size_t i = 1; i < displaySamples.size(); ++i)
+    {
+        const Sample& previous = displaySamples[i - 1];
+        const Sample& current = displaySamples[i];
         const double span = current.azDeg - previous.azDeg;
         if (span <= 0.0)
             continue;

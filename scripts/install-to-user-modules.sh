@@ -24,6 +24,14 @@ fi
 
 if [[ ! -f "$target_dir/obstructions.txt" ]]; then
   cp "$repo_root/data/obstructions.txt" "$target_dir/obstructions.txt"
+else
+  backup_dir="$target_dir/backups"
+  backup_file="$backup_dir/obstructions-$(date +%Y%m%d-%H%M%S).txt"
+  mkdir -p "$backup_dir"
+  cp "$target_dir/obstructions.txt" "$backup_file"
+  echo "Preserved existing obstructions.txt"
+  echo "Backup saved to:"
+  echo "$backup_file"
 fi
 
 if command -v lconvert >/dev/null 2>&1; then

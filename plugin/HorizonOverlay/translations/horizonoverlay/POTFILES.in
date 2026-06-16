@@ -1,1 +1,3 @@
 src/HorizonOverlay.cpp
+src/gui/HorizonOverlayDialog.cpp
+src/gui/horizonOverlayDialog.ui
