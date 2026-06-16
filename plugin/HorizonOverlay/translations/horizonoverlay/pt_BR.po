@@ -5,8 +5,9 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: HorizonOverlay 0.1.1\n"
-"Report-Msgid-Bugs-To: https://github.com/songshugong/HorizonOverlay/issues\n"
-"POT-Creation-Date: 2026-05-25 00:00+0800\n"
+"Report-Msgid-Bugs-To: \"https://github.com/songshugong/HorizonOverlay/"
+"issues\"\n"
+"POT-Creation-Date: 2026-06-16 08:28+0800\n"
 "PO-Revision-Date: 2026-05-25 09:40+0800\n"
 "Last-Translator: Song Zihan\n"
 "Language-Team: Portuguese (Brazil)\n"
@@ -16,50 +17,222 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
+#: src/HorizonOverlay.cpp:380 src/HorizonOverlay.cpp:431
+#: src/HorizonOverlay.cpp:432 src/gui/HorizonOverlayDialog.cpp:251
 msgid "Horizon Overlay"
 msgstr "Sobreposição do horizonte"
 
-msgid "Draws a transparent local obstruction horizon overlay above the normal Stellarium landscape."
-msgstr "Desenha uma sobreposição transparente de obstruções locais do horizonte sobre a paisagem normal do Stellarium."
+#: src/HorizonOverlay.cpp:383 src/gui/HorizonOverlayDialog.cpp:257
+msgid ""
+"Draws a transparent local obstruction horizon overlay above the normal "
+"Stellarium landscape."
+msgstr ""
+"Desenha uma sobreposição transparente de obstruções locais do horizonte "
+"acima da paisagem normal do Stellarium."
 
-msgid "Horizon Overlay Settings"
-msgstr "Configurações da sobreposição do horizonte"
+#: src/HorizonOverlay.cpp:431
+msgid "Show local obstruction horizon overlay"
+msgstr "Mostrar sobreposição de obstruções locais do horizonte"
 
-msgid "Show overlay"
-msgstr "Mostrar sobreposição"
+#: src/HorizonOverlay.cpp:432
+msgid "Show settings dialog"
+msgstr "Mostrar diálogo de configurações"
 
-msgid "Show filled obstruction area"
-msgstr "Mostrar área de obstrução preenchida"
+#: src/HorizonOverlay.cpp:649
+#, qt-format
+msgid ""
+"Performance: %1 ms last, %2 ms avg, %3 ms max | FoV %4 deg | %5 | %6 samples"
+msgstr ""
+"Desempenho: %1 ms último, %2 ms méd., %3 ms máx. | FoV %4 graus | %5 | %6 "
+"amostras"
 
-msgid "Show outline"
-msgstr "Mostrar contorno"
+#: src/gui/HorizonOverlayDialog.cpp:102
+msgid ""
+"Edit mode is active. Hold Shift and drag with the left mouse button to add "
+"points; hold Shift and drag with the right mouse button to erase nearby "
+"points."
+msgstr "O modo de edição está ativo. Segure Shift e arraste com o botão esquerdo para adicionar pontos; segure Shift e arraste com o botão direito para apagar pontos próximos."
 
-msgid "Fill opacity: %1%"
-msgstr "Opacidade do preenchimento: %1%"
+#: src/gui/HorizonOverlayDialog.cpp:116
+msgid ""
+"Drawing mode is active. Hold Shift and drag with the left mouse button in "
+"the sky to add points; hold Shift and drag with the right mouse button to "
+"erase nearby points."
+msgstr "O modo de desenho está ativo. Segure Shift e arraste com o botão esquerdo no céu para adicionar pontos; segure Shift e arraste com o botão direito para apagar pontos próximos."
 
-msgid "Line opacity: %1%"
-msgstr "Opacidade da linha: %1%"
+#: src/gui/HorizonOverlayDialog.cpp:126
+msgid "Drawing finished and table saved."
+msgstr "Desenho finalizado e tabela salva."
 
+#: src/gui/HorizonOverlayDialog.cpp:126
+msgid "Drawing finished, but the table could not be saved."
+msgstr "Desenho finalizado, mas não foi possível salvar a tabela."
+
+#: src/gui/HorizonOverlayDialog.cpp:156 src/gui/HorizonOverlayDialog.cpp:239
 msgid "Fill color"
-msgstr "Cor de preenchimento"
+msgstr "Cor do preenchimento"
 
+#: src/gui/HorizonOverlayDialog.cpp:164 src/gui/HorizonOverlayDialog.cpp:240
 msgid "Line color"
 msgstr "Cor da linha"
 
-msgid "Choose file..."
-msgstr "Escolher arquivo..."
-
-msgid "Reload table"
-msgstr "Recarregar tabela"
-
-msgid "Obstruction table:"
-msgstr "Tabela de obstruções:"
-
-msgid "Close"
-msgstr "Fechar"
-
+#: src/gui/HorizonOverlayDialog.cpp:184
 msgid "Choose obstruction table"
 msgstr "Escolher tabela de obstruções"
 
+#: src/gui/HorizonOverlayDialog.cpp:186
 msgid "Text files (*.txt *.hrz *.csv);;All files (*)"
 msgstr "Arquivos de texto (*.txt *.hrz *.csv);;Todos os arquivos (*)"
+
+#: src/gui/HorizonOverlayDialog.cpp:193 src/gui/HorizonOverlayDialog.cpp:198
+msgid "Table reloaded."
+msgstr "Tabela recarregada."
+
+#: src/gui/HorizonOverlayDialog.cpp:202
+msgid "Points cleared."
+msgstr "Pontos limpos."
+
+#: src/gui/HorizonOverlayDialog.cpp:206
+msgid "Table saved."
+msgstr "Tabela salva."
+
+#: src/gui/HorizonOverlayDialog.cpp:206
+msgid "Could not save table."
+msgstr "Não foi possível salvar a tabela."
+
+#: src/gui/HorizonOverlayDialog.cpp:215 src/gui/HorizonOverlayDialog.cpp:216
+msgid "Horizon Overlay Settings"
+msgstr "Configurações da sobreposição do horizonte"
+
+#: src/gui/HorizonOverlayDialog.cpp:217
+msgid "Settings"
+msgstr "Configurações"
+
+#: src/gui/HorizonOverlayDialog.cpp:218
+msgid "About"
+msgstr "Sobre"
+
+#: src/gui/HorizonOverlayDialog.cpp:219 src/gui/HorizonOverlayDialog.cpp:242
+msgid "Performance monitor"
+msgstr "Monitor de desempenho"
+
+#: src/gui/HorizonOverlayDialog.cpp:220
+msgid "Obstruction profile"
+msgstr "Perfil de obstruções"
+
+#: src/gui/HorizonOverlayDialog.cpp:221
+msgid "Obstruction table:"
+msgstr "Tabela de obstruções:"
+
+#: src/gui/HorizonOverlayDialog.cpp:222
+msgid "Choose file..."
+msgstr "Escolher arquivo..."
+
+#: src/gui/HorizonOverlayDialog.cpp:223
+msgid "Reload table"
+msgstr "Recarregar tabela"
+
+#: src/gui/HorizonOverlayDialog.cpp:224
+msgid "Clear points"
+msgstr "Limpar pontos"
+
+#: src/gui/HorizonOverlayDialog.cpp:225
+msgid "Save table"
+msgstr "Salvar tabela"
+
+#: src/gui/HorizonOverlayDialog.cpp:226
+msgid "Overlay controls"
+msgstr "Controles da sobreposição"
+
+#: src/gui/HorizonOverlayDialog.cpp:227
+msgid "Show overlay"
+msgstr "Mostrar sobreposição"
+
+#: src/gui/HorizonOverlayDialog.cpp:228
+msgid "Show filled obstruction area"
+msgstr "Mostrar área de obstrução preenchida"
+
+#: src/gui/HorizonOverlayDialog.cpp:229
+msgid "Show outline"
+msgstr "Mostrar contorno"
+
+#: src/gui/HorizonOverlayDialog.cpp:230
+msgid "Edit points"
+msgstr "Editar pontos"
+
+#: src/gui/HorizonOverlayDialog.cpp:231
+msgid "Show button on bottom toolbar"
+msgstr "Mostrar botão na barra inferior"
+
+#: src/gui/HorizonOverlayDialog.cpp:232
+msgid ""
+"Draw a profile directly in the sky: hold Shift and drag with the left mouse "
+"button to add points; hold Shift and drag with the right mouse button to "
+"erase nearby points."
+msgstr "Desenhe um perfil diretamente no céu: segure Shift e arraste com o botão esquerdo para adicionar pontos; segure Shift e arraste com o botão direito para apagar pontos próximos."
+
+#: src/gui/HorizonOverlayDialog.cpp:233
+msgid "Start drawing profile"
+msgstr "Iniciar desenho do perfil"
+
+#: src/gui/HorizonOverlayDialog.cpp:234
+msgid "Finish and save drawing"
+msgstr "Finalizar e salvar desenho"
+
+#: src/gui/HorizonOverlayDialog.cpp:235
+msgid "Appearance"
+msgstr "Aparência"
+
+#: src/gui/HorizonOverlayDialog.cpp:236
+msgid "Fill opacity:"
+msgstr "Opacidade do preenchimento:"
+
+#: src/gui/HorizonOverlayDialog.cpp:237
+msgid "Line opacity:"
+msgstr "Opacidade da linha:"
+
+#: src/gui/HorizonOverlayDialog.cpp:238
+msgid "Line width:"
+msgstr "Largura da linha:"
+
+#: src/gui/HorizonOverlayDialog.cpp:241
+msgid "Save settings"
+msgstr "Salvar configurações"
+
+#: src/gui/HorizonOverlayDialog.cpp:253
+msgid "Version:"
+msgstr "Versão:"
+
+#: src/gui/HorizonOverlayDialog.cpp:254
+msgid "License:"
+msgstr "Licença:"
+
+#: src/gui/HorizonOverlayDialog.cpp:255
+msgid "Authors:"
+msgstr "Autores:"
+
+#: src/gui/HorizonOverlayDialog.cpp:258
+msgid ""
+"Use an Az/Alt obstruction table to visualize buildings, trees, terrain, or "
+"other local horizon blockers without replacing the active Stellarium "
+"landscape."
+msgstr ""
+"Use uma tabela de obstruções de azimute/altura para visualizar edifícios, "
+"árvores, terreno ou outros bloqueios locais do horizonte sem substituir a "
+"paisagem ativa do Stellarium."
+
+#: src/gui/HorizonOverlayDialog.cpp:259
+msgid ""
+"Wide-field rendering uses a shader mask when available and falls back to a "
+"CPU screen mask when needed."
+msgstr ""
+"A renderização de campo amplo usa uma máscara de shader quando disponível e "
+"recorre a uma máscara de tela pela CPU quando necessário."
+
+#: src/gui/HorizonOverlayDialog.cpp:290
+msgid "Settings are saved automatically."
+msgstr "As configurações são salvas automaticamente."
+
+#: src/gui/HorizonOverlayDialog.cpp:317
+msgid "Settings saved."
+msgstr "Configurações salvas."

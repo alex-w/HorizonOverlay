@@ -1,4 +1,9 @@
-INCLUDE_DIRECTORIES(.)
+INCLUDE_DIRECTORIES(
+    .
+    gui
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/gui
+)
 
 FIND_PACKAGE(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Widgets OpenGL)
 
@@ -24,7 +29,22 @@ ENDIF()
 SET(HorizonOverlay_SRCS
     HorizonOverlay.hpp
     HorizonOverlay.cpp
+    gui/HorizonOverlayDialog.hpp
+    gui/HorizonOverlayDialog.cpp
 )
+
+SET(HorizonOverlay_UIS
+    gui/horizonOverlayDialog.ui
+)
+
+SET(HorizonOverlay_RES ../resources/HorizonOverlay.qrc)
+IF (${QT_VERSION_MAJOR} EQUAL "5")
+    QT5_WRAP_UI(HorizonOverlay_UIS_H ${HorizonOverlay_UIS})
+    QT5_ADD_RESOURCES(HorizonOverlay_RES_CXX ${HorizonOverlay_RES})
+ELSE()
+    QT_WRAP_UI(HorizonOverlay_UIS_H ${HorizonOverlay_UIS})
+    QT_ADD_RESOURCES(HorizonOverlay_RES_CXX ${HorizonOverlay_RES})
+ENDIF()
 
 SET(HorizonOverlay_Qt_LIBRARIES
     Qt${QT_VERSION_MAJOR}::Core
@@ -35,7 +55,7 @@ SET(HorizonOverlay_Qt_LIBRARIES
 SET(StelMain)
 
 IF(BUILD_DYNAMIC_PLUGIN)
-    ADD_LIBRARY(HorizonOverlay MODULE ${HorizonOverlay_SRCS})
+    ADD_LIBRARY(HorizonOverlay MODULE ${HorizonOverlay_SRCS} ${HorizonOverlay_UIS_H} ${HorizonOverlay_RES_CXX})
     SET_TARGET_PROPERTIES(HorizonOverlay PROPERTIES PREFIX "lib")
     IF(APPLE)
         # Stellarium loads dynamic plug-ins at runtime and provides the StelMain
@@ -56,7 +76,7 @@ IF(BUILD_DYNAMIC_PLUGIN)
     TARGET_LINK_LIBRARIES(HorizonOverlay ${StelMain} ${HorizonOverlay_Qt_LIBRARIES})
     INSTALL(TARGETS HorizonOverlay DESTINATION "modules/HorizonOverlay")
 ELSE()
-    ADD_LIBRARY(HorizonOverlay-static STATIC ${HorizonOverlay_SRCS})
+    ADD_LIBRARY(HorizonOverlay-static STATIC ${HorizonOverlay_SRCS} ${HorizonOverlay_UIS_H} ${HorizonOverlay_RES_CXX})
     SET_TARGET_PROPERTIES(HorizonOverlay-static PROPERTIES OUTPUT_NAME "HorizonOverlay")
     TARGET_LINK_LIBRARIES(HorizonOverlay-static ${StelMain} ${HorizonOverlay_Qt_LIBRARIES})
     SET_TARGET_PROPERTIES(HorizonOverlay-static PROPERTIES COMPILE_FLAGS "-DQT_STATICPLUGIN")

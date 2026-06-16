@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/HorizonOverlay">
+        <file>bt_HorizonOverlay_On.png</file>
+        <file>bt_HorizonOverlay_Off.png</file>
+    </qresource>
+</RCC>
